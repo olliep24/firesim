@@ -1,4 +1,5 @@
 mod app;
+mod state;
 
 use anyhow::Result;
 use winit::event_loop::{ControlFlow, EventLoop};
