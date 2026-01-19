@@ -8,7 +8,7 @@ use crate::app::App;
 fn main() -> Result<()> {
     let event_loop = EventLoop::new()?;
 
-    // TODO: Not exactly sure which is best yet.
+    // TODO: Not exactly sure which is best yet. Prob best because we want to always update the sim.
     // ControlFlow::Poll continuously runs the event loop, even if the OS hasn't
     // dispatched any events. This is ideal for games and similar applications.
     event_loop.set_control_flow(ControlFlow::Poll);
