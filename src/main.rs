@@ -1,6 +1,7 @@
 mod app;
 mod state;
 mod vertex;
+mod camera;
 
 use anyhow::Result;
 use winit::event_loop::{ControlFlow, EventLoop};
