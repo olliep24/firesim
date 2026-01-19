@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use cgmath::prelude::*;
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration};
 use wgpu::util::DeviceExt;
 use winit::event_loop::ActiveEventLoop;
@@ -7,6 +8,7 @@ use winit::window::Window;
 
 use crate::vertex::Vertex;
 use crate::camera::{Camera, CameraController, CameraUniform};
+use crate::instance::{Instance, InstanceRaw};
 
 const VERTICES: &[Vertex] = &[
     Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [0.5, 0.0, 0.5] }, // A
@@ -21,6 +23,10 @@ const INDICES: &[u16] = &[
     1, 2, 4,
     2, 3, 4,
 ];
+
+const NUM_INSTANCES_PER_ROW: u32 = 10;
+const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> =
+    cgmath::Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5);
 
 pub struct State {
     surface: Surface<'static>,
@@ -37,6 +43,8 @@ pub struct State {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+    instances: Vec<Instance>,
+    instance_buffer: wgpu::Buffer,
     pub window: Arc<Window>,
 }
 
@@ -176,6 +184,33 @@ impl State {
 
         let num_indices = INDICES.len() as u32;
 
+        let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
+            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+                let position = cgmath::Vector3 { x: x as f32, y: 0.0, z: z as f32 } - INSTANCE_DISPLACEMENT;
+
+                let rotation = if position.is_zero() {
+                    // this is needed so an object at (0, 0, 0) won't get scaled to zero
+                    // as Quaternions can affect scale if they're not created correctly
+                    cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
+                } else {
+                    cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
+                };
+
+                Instance {
+                    position, rotation,
+                }
+            })
+        }).collect::<Vec<_>>();
+
+        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        let instance_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer"),
+                contents: bytemuck::cast_slice(&instance_data),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
+
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
@@ -183,7 +218,7 @@ impl State {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 buffers: &[
-                    Vertex::desc(),
+                    Vertex::desc(), InstanceRaw::desc()
                 ],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
@@ -234,6 +269,8 @@ impl State {
             vertex_buffer,
             index_buffer,
             num_indices,
+            instances,
+            instance_buffer,
             window,
         })
     }
@@ -313,8 +350,9 @@ impl State {
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..self.num_indices, 0,0..1);
+            render_pass.draw_indexed(0..self.num_indices, 0,0..self.instances.len() as _);
         }
 
         // submit will accept anything that implements IntoIter
