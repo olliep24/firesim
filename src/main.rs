@@ -3,6 +3,7 @@ mod state;
 mod vertex;
 mod camera;
 mod instance;
+mod texture;
 
 use anyhow::Result;
 use winit::event_loop::{ControlFlow, EventLoop};

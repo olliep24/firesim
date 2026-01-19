@@ -9,6 +9,7 @@ use winit::window::Window;
 use crate::vertex::Vertex;
 use crate::camera::{Camera, CameraController, CameraUniform};
 use crate::instance::{Instance, InstanceRaw};
+use crate::texture::Texture;
 
 const VERTICES: &[Vertex] = &[
     Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [0.5, 0.0, 0.5] }, // A
@@ -34,6 +35,7 @@ pub struct State {
     queue: Queue,
     config: SurfaceConfiguration,
     is_surface_configured: bool,
+    depth_texture: Texture,
     camera: Camera,
     camera_controller: CameraController,
     camera_uniform: CameraUniform,
@@ -102,6 +104,8 @@ impl State {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
+
+        let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
 
         let camera = Camera {
             // position the camera 1 unit up and 2 units back
@@ -244,7 +248,13 @@ impl State {
                 // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: Texture::DEPTH_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState {
                 count: 1,
                 mask: !0,
@@ -260,6 +270,7 @@ impl State {
             queue,
             config,
             is_surface_configured: false,
+            depth_texture,
             camera,
             camera_controller,
             camera_uniform,
@@ -280,6 +291,7 @@ impl State {
             self.config.width = width;
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
+            self.depth_texture = Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
             self.is_surface_configured = true;
         }
     }
@@ -342,7 +354,14 @@ impl State {
                         depth_slice: None,
                     })
                 ],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
