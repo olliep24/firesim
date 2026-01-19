@@ -1,5 +1,6 @@
 mod app;
 mod state;
+mod vertex;
 
 use anyhow::Result;
 use winit::event_loop::{ControlFlow, EventLoop};

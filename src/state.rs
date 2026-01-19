@@ -1,8 +1,17 @@
 use std::sync::Arc;
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration};
+use wgpu::util::DeviceExt;
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::KeyCode;
 use winit::window::Window;
+
+use crate::vertex::Vertex;
+
+const VERTICES: &[Vertex] = &[
+    Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },
+    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] },
+    Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },
+];
 
 pub struct State {
     surface: Surface<'static>,
@@ -11,6 +20,8 @@ pub struct State {
     config: SurfaceConfiguration,
     is_surface_configured: bool,
     render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: u32,
     pub window: Arc<Window>,
 }
 
@@ -76,13 +87,23 @@ impl State {
                 push_constant_ranges: &[],
             });
 
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(VERTICES),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
+
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[],
+                buffers: &[
+                    Vertex::desc(),
+                ],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -117,6 +138,8 @@ impl State {
             cache: None,
         });
 
+        let num_vertices = VERTICES.len() as u32;
+
         Ok(Self {
             surface,
             device,
@@ -124,6 +147,8 @@ impl State {
             config,
             is_surface_configured: false,
             render_pipeline,
+            vertex_buffer,
+            num_vertices,
             window,
         })
     }
@@ -191,7 +216,8 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.draw(0..3, 0..1);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.draw(0..self.num_vertices, 0..1);
         }
 
         // submit will accept anything that implements IntoIter
