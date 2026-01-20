@@ -1,12 +1,13 @@
 use std::sync::Arc;
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration};
 use wgpu::util::DeviceExt;
+use winit::event::ElementState;
 use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::KeyCode;
 use winit::window::Window;
 
 use crate::vertex::Vertex;
-use crate::camera::{Camera, CameraController, CameraUniform};
+use crate::camera::{Camera, CameraController, CameraUniform, Projection};
 use crate::instance::{Instance, InstanceRaw};
 use crate::texture::Texture;
 
@@ -40,7 +41,8 @@ pub struct State {
     is_surface_configured: bool,
     depth_texture: Texture,
     camera: Camera,
-    camera_controller: CameraController,
+    pub camera_controller: CameraController,
+    projection: Projection,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
@@ -50,6 +52,7 @@ pub struct State {
     num_indices: u32,
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
+    pub mouse_pressed: bool,
     pub window: Arc<Window>,
 }
 
@@ -110,24 +113,12 @@ impl State {
 
         let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
 
-        let camera = Camera {
-            // position the camera 1 unit up and 2 units back
-            // +z is out of the screen
-            eye: (0.0, 1.0, 2.0).into(),
-            // have the camera look at the origin
-            target: (0.0, 0.0, 0.0).into(),
-            // which way is "up"
-            up: cgmath::Vector3::unit_y(),
-            aspect: config.width as f32 / config.height as f32,
-            fovy: 45.0,
-            znear: 0.1,
-            zfar: 100.0,
-        };
-
-        let camera_controller = CameraController::new(0.2);
+        let camera = Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
+        let camera_controller = CameraController::new(4.0, 0.4);
+        let projection = Projection::new(config.width, config.height, cgmath::Deg(45.0), 0.1, 100.0);
 
         let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&camera);
+        camera_uniform.update_view_proj(&camera, &projection);
 
         let camera_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -268,6 +259,7 @@ impl State {
             depth_texture,
             camera,
             camera_controller,
+            projection,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
@@ -277,6 +269,7 @@ impl State {
             num_indices,
             instances,
             instance_buffer,
+            mouse_pressed: false,
             window,
         })
     }
@@ -286,14 +279,15 @@ impl State {
             self.config.width = width;
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
+            self.projection.resize(width, height);
             self.depth_texture = Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
             self.is_surface_configured = true;
         }
     }
 
-    pub fn update(&mut self) {
-        self.camera_controller.update_camera(&mut self.camera);
-        self.camera_uniform.update_view_proj(&self.camera);
+    pub fn update(&mut self, dt: instant::Duration) {
+        self.camera_controller.update_camera(&mut self.camera, dt);
+        self.camera_uniform.update_view_proj(&self.camera, &self.projection);
         /*
         Potential to optimize:
         We can create a separate buffer and copy its contents to our camera_buffer. The new buffer
@@ -305,12 +299,16 @@ impl State {
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
     }
 
-    pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
-        if code == KeyCode::Escape && is_pressed {
+    pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, key_state: ElementState) {
+        if code == KeyCode::Escape && key_state.is_pressed() {
             event_loop.exit();
         } else {
-            self.camera_controller.handle_key(code, is_pressed);
+            self.camera_controller.process_keyboard(code, key_state);
         }
+    }
+
+    pub fn handle_mouse_click(&mut self, mouse_state: ElementState) {
+        self.mouse_pressed = mouse_state.is_pressed();
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
