@@ -40,7 +40,7 @@ fn vs_main(
     let instance_center_world = vec3<f32>(model_matrix[3][0], model_matrix[3][1], model_matrix[3][2]);
 
     let camera_right_world = vec3<f32>(camera.view[0][0], camera.view[1][0], camera.view[2][0]);
-    let camera_up_world = vec3<f32>(camera.view[0][1], view[1][1], camera.view[2][1]);
+    let camera_up_world = vec3<f32>(camera.view[0][1], camera.view[1][1], camera.view[2][1]);
 
     let vertex_position_world =
         instance_center_world
