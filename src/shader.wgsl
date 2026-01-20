@@ -1,8 +1,9 @@
 // Uniform buffers
 struct CameraUniform {
-    view_proj: mat4x4<f32>,
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
 };
-@group(0) @binding(0) // 1.
+@group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
 // Vertex shader
@@ -35,9 +36,20 @@ fn vs_main(
         instance.model_matrix_3,
     );
 
+    // Billboard the instance - always facing the camera.
+    let instance_center_world = vec3<f32>(model_matrix[3][0], model_matrix[3][1], model_matrix[3][2]);
+
+    let camera_right_world = vec3<f32>(camera.view[0][0], camera.view[1][0], camera.view[2][0]);
+    let camera_up_world = vec3<f32>(camera.view[0][1], view[1][1], camera.view[2][1]);
+
+    let vertex_position_world =
+        instance_center_world
+        + camera_right_world * model.position.x
+        + camera_up_world * model.position.y;
+
     var out: VertexOutput;
     out.color = model.color;
-    out.clip_position = camera.view_proj * model_matrix * vec4<f32>(model.position, 1.0);
+    out.clip_position = camera.proj * camera.view * vec4<f32>(vertex_position_world, 1.0);
     return out;
 }
 

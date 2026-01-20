@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use cgmath::prelude::*;
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration};
 use wgpu::util::DeviceExt;
 use winit::event_loop::ActiveEventLoop;
@@ -11,18 +10,22 @@ use crate::camera::{Camera, CameraController, CameraUniform};
 use crate::instance::{Instance, InstanceRaw};
 use crate::texture::Texture;
 
+const SQUARE_SCALE: f32 = 0.35;
+
 const VERTICES: &[Vertex] = &[
-    Vertex { position: [-0.0868241, 0.49240386, 0.0], color: [0.5, 0.0, 0.5] }, // A
-    Vertex { position: [-0.49513406, 0.06958647, 0.0], color: [0.5, 0.0, 0.5] }, // B
-    Vertex { position: [-0.21918549, -0.44939706, 0.0], color: [0.5, 0.0, 0.5] }, // C
-    Vertex { position: [0.35966998, -0.3473291, 0.0], color: [0.5, 0.0, 0.5] }, // D
-    Vertex { position: [0.44147372, 0.2347359, 0.0], color: [0.5, 0.0, 0.5] }, // E
+    // bottom-left
+    Vertex { position: [-SQUARE_SCALE, -SQUARE_SCALE, 0.0], color: [SQUARE_SCALE, 0.0, SQUARE_SCALE] },
+    // bottom-right
+    Vertex { position: [SQUARE_SCALE, -SQUARE_SCALE, 0.0], color: [SQUARE_SCALE, 0.0, SQUARE_SCALE] },
+    // top-right
+    Vertex { position: [SQUARE_SCALE, SQUARE_SCALE, 0.0], color: [SQUARE_SCALE, 0.0, SQUARE_SCALE] },
+    // top-left
+    Vertex { position: [-SQUARE_SCALE, SQUARE_SCALE, 0.0], color: [SQUARE_SCALE, 0.0, SQUARE_SCALE] },
 ];
 
 const INDICES: &[u16] = &[
-    0, 1, 4,
-    1, 2, 4,
-    2, 3, 4,
+    0, 1, 2,
+    0, 2, 3,
 ];
 
 const NUM_INSTANCES_PER_ROW: u32 = 10;
@@ -192,16 +195,8 @@ impl State {
             (0..NUM_INSTANCES_PER_ROW).map(move |x| {
                 let position = cgmath::Vector3 { x: x as f32, y: 0.0, z: z as f32 } - INSTANCE_DISPLACEMENT;
 
-                let rotation = if position.is_zero() {
-                    // this is needed so an object at (0, 0, 0) won't get scaled to zero
-                    // as Quaternions can affect scale if they're not created correctly
-                    cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0))
-                } else {
-                    cgmath::Quaternion::from_axis_angle(position.normalize(), cgmath::Deg(45.0))
-                };
-
                 Instance {
-                    position, rotation,
+                    position
                 }
             })
         }).collect::<Vec<_>>();

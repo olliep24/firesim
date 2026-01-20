@@ -1,3 +1,4 @@
+use winit::keyboard::KeyCode;
 
 /*
 The coordinate system in Wgpu is based on DirectX and Metal's coordinate systems. That means that
@@ -6,8 +7,6 @@ in normalized device coordinates (opens new window), the x-axis and y-axis are i
 is built for OpenGL's coordinate system. This matrix will scale and translate our scene from
 OpenGL's coordinate system to WGPU's.
  */
-use winit::keyboard::KeyCode;
-
 #[rustfmt::skip]
 const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::from_cols(
     cgmath::Vector4::new(1.0, 0.0, 0.0, 0.0),
@@ -27,14 +26,13 @@ pub struct Camera {
 }
 
 impl Camera {
-    fn build_view_projection_matrix(&self) -> cgmath::Matrix4<f32> {
-        // 1.
-        let view = cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up);
-        // 2.
-        let proj = cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar);
+    fn build_view_matrix(&self) -> cgmath::Matrix4<f32> {
+        cgmath::Matrix4::look_at_rh(self.eye, self.target, self.up)
+    }
 
-        // 3.
-        OPENGL_TO_WGPU_MATRIX * proj * view
+    fn build_proj_matrix(&self) -> cgmath::Matrix4<f32> {
+        // Scale the projection matrix from opengl to wgpu.
+        OPENGL_TO_WGPU_MATRIX * cgmath::perspective(cgmath::Deg(self.fovy), self.aspect, self.znear, self.zfar)
     }
 }
 
@@ -43,19 +41,23 @@ impl Camera {
 pub struct CameraUniform {
     // We can't use cgmath with bytemuck directly, so we'll have
     // to convert the Matrix4 into a 4x4 f32 array
-    pub view_proj: [[f32; 4]; 4],
+    pub view: [[f32; 4]; 4],
+    pub proj: [[f32; 4]; 4],
 }
 
 impl CameraUniform {
     pub fn new() -> Self {
         use cgmath::SquareMatrix;
         Self {
-            view_proj: cgmath::Matrix4::identity().into(),
+            view: cgmath::Matrix4::identity().into(),
+            proj: cgmath::Matrix4::identity().into(),
         }
     }
 
+    /// Updates the camera uniform given a camera.
     pub fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = camera.build_view_projection_matrix().into();
+        self.view = camera.build_view_matrix().into();
+        self.proj = camera.build_proj_matrix().into();
     }
 }
 
