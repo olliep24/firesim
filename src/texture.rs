@@ -1,8 +1,3 @@
-/**
-Each channel (RBGA) in the texture will be a 16-bit float.
-TODO: My current machine allows this will the texture usages I need, but add check for this.
-*/
-const CHANNEL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const GRID_SIZE: u32 = 64;
 /* Grid will be a cube and have GRID_SIZE x GRID_SIZE x GRID_SIZE voxels. */
 const GRID_DIMENSION: wgpu::Extent3d = wgpu::Extent3d {
@@ -31,10 +26,11 @@ impl Texture {
     /// vector field.
     ///
     /// Depending on the number of channels need and their precision, use the appropriate format for
-    /// memory efficiency.
-    pub fn create_compute_texture(device: &wgpu::Device, format: wgpu::TextureFormat, label: &str) -> Self {
+    /// memory efficiency. Although, the format may not be available on your machine for the texture
+    /// usages.
+    pub fn create_compute_texture(device: &wgpu::Device, format: wgpu::TextureFormat, label: Option<&str>) -> Self {
         let desc = wgpu::TextureDescriptor {
-            label: Some(label),
+            label,
             size: GRID_DIMENSION,
             mip_level_count: 1,
             sample_count: 1,

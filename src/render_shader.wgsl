@@ -18,6 +18,7 @@ struct VertexOutput {
 };
 
 struct InstanceInput {
+    // TODO: See if these still need offset locations.
     @location(5) model_matrix_0: vec4<f32>,
     @location(6) model_matrix_1: vec4<f32>,
     @location(7) model_matrix_2: vec4<f32>,

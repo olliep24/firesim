@@ -11,6 +11,13 @@ use crate::camera::{Camera, CameraController, CameraUniform, Projection};
 use crate::instance::{Instance, InstanceRaw};
 use crate::texture::Texture;
 
+/**
+Each channel (RBGA) in the texture will be a 16-bit float.
+TODO: My current machine allows this will the texture usages I need, but add check for this.
+*/
+const VECTOR_FIELD_CHANNEL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+const SCALAR_FIELD_CHANNEL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
 const SQUARE_SCALE: f32 = 0.35;
 
 const VERTICES: &[Vertex] = &[
@@ -53,6 +60,9 @@ pub struct State {
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
     compute_pipeline: wgpu::ComputePipeline,
+    use_a_to_b: bool,
+    compute_bind_group_a_to_b: wgpu::BindGroup,
+    compute_bind_group_b_to_a: wgpu::BindGroup,
     pub mouse_pressed: bool,
     pub window: Arc<Window>,
 }
@@ -256,6 +266,102 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("compute_shader.wgsl").into()),
         });
 
+        let compute_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Compute Pipeline Bind Group Layout"),
+            entries: &[
+                // 1. Velocity vector field texture.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // 2. Particle center scalar field texture input
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // 3. Particle center scalar field texture output
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: SCALAR_FIELD_CHANNEL_FORMAT,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                    },
+                    count: None,
+                },
+                // 4. Sampler for particle center texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                }
+            ]
+        });
+
+        // TODO: Add note on why we're using a texture here instead of a buffer.
+        let velocity_field_texture = Texture::create_compute_texture(
+            &device,
+            VECTOR_FIELD_CHANNEL_FORMAT,
+            Some("Velocity Field Texture")
+        );
+
+        let particle_center_scalar_field_texture_a = Texture::create_compute_texture(
+            &device,
+            SCALAR_FIELD_CHANNEL_FORMAT,
+            Some("Particle Center Scalar Field Texture A")
+        );
+
+        let particle_center_scalar_field_texture_b = Texture::create_compute_texture(
+            &device,
+            SCALAR_FIELD_CHANNEL_FORMAT,
+            Some("Particle Center Scalar Field Texture B")
+        );
+
+        // Create two bind groups to ping pong between, controlled by use_a_to_b flag.
+        let compute_bind_group_a_to_b = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Compute Bind Group A to B"),
+            layout: &compute_bind_group_layout,
+            entries: &[
+                // binding 1: Velocity field read
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&velocity_field_texture.view) },
+                // binding 2: Particle center scalar field read
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&particle_center_scalar_field_texture_a.view) },
+                // binding 3: Particle center scalar field write
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&particle_center_scalar_field_texture_b.view) },
+                // binding 4: Sampler for particle center scalar field (either a or b work)
+                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(&particle_center_scalar_field_texture_a.sampler) },
+            ],
+        });
+
+        let compute_bind_group_b_to_a = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Compute Bind Group A to B"),
+            layout: &compute_bind_group_layout,
+            entries: &[
+                // binding 1: Velocity field read
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&velocity_field_texture.view) },
+                // binding 2: Particle center scalar field read
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::TextureView(&particle_center_scalar_field_texture_b.view) },
+                // binding 3: Particle center scalar field write
+                wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&particle_center_scalar_field_texture_a.view) },
+                // binding 4: Sampler for particle center scalar field (either a or b work)
+                wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::Sampler(&particle_center_scalar_field_texture_b.sampler) },
+            ],
+        });
+
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("Compute Pipeline"),
             layout: None,
@@ -286,6 +392,9 @@ impl State {
             instances,
             instance_buffer,
             compute_pipeline,
+            use_a_to_b: true,
+            compute_bind_group_a_to_b,
+            compute_bind_group_b_to_a,
             mouse_pressed: false,
             window,
         })
@@ -346,6 +455,12 @@ impl State {
             // TODO: Figure out number of dispatches and work groups.
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
             compute_pass.set_pipeline(&self.compute_pipeline);
+
+            compute_pass.set_bind_group(
+                0,
+                if self.use_a_to_b { &self.compute_bind_group_a_to_b } else { &self.compute_bind_group_b_to_a },
+                &[]
+            );
         }
 
         {
