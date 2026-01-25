@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration};
 use wgpu::util::DeviceExt;
 use winit::event::ElementState;
@@ -11,6 +12,7 @@ use crate::camera::{Camera, CameraController, CameraUniform, Projection};
 use crate::instance::{Instance, InstanceRaw};
 use crate::texture::Texture;
 use crate::compute_params::ComputeParams;
+use crate::config::GRID_DIMENSION_LENGTH;
 
 /**
 Each channel (RBGA) in the texture will be a 16-bit float.
@@ -268,9 +270,7 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("compute_shader.wgsl").into()),
         });
 
-        let compute_params = ComputeParams {
-            dt: 0.0
-        };
+        let compute_params = ComputeParams::new(Duration::new(0, 0));
 
         let compute_params_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -421,9 +421,18 @@ impl State {
             ],
         });
 
+        let compute_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Compute Pipeline Layout"),
+                bind_group_layouts: &[
+                    &compute_bind_group_layout,
+                ],
+                push_constant_ranges: &[],
+            });
+
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("Compute Pipeline"),
-            layout: None,
+            layout: Some(&compute_pipeline_layout),
             module: &compute_shader,
             // Will default to @compute
             entry_point: None,
@@ -524,6 +533,14 @@ impl State {
             );
             // Ping pong between textures.
             self.use_a_to_b = !self.use_a_to_b;
+
+            // We specified 4 threads per dimension in the compute shader.
+            let num_dispatches_per_dimension = GRID_DIMENSION_LENGTH / 4;
+            compute_pass.dispatch_workgroups(
+                num_dispatches_per_dimension,
+                num_dispatches_per_dimension,
+                num_dispatches_per_dimension
+            );
         }
 
         {

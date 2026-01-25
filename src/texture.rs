@@ -1,10 +1,4 @@
-const GRID_SIZE: u32 = 64;
-/* Grid will be a cube and have GRID_SIZE x GRID_SIZE x GRID_SIZE voxels. */
-const GRID_DIMENSION: wgpu::Extent3d = wgpu::Extent3d {
-    width: GRID_SIZE,
-    height: GRID_SIZE,
-    depth_or_array_layers: GRID_SIZE,
-};
+use crate::config::{GRID_DIMENSIONS};
 
 pub struct Texture {
     #[allow(unused)]
@@ -31,7 +25,7 @@ impl Texture {
     pub fn create_compute_texture(device: &wgpu::Device, format: wgpu::TextureFormat, label: Option<&str>) -> Self {
         let desc = wgpu::TextureDescriptor {
             label,
-            size: GRID_DIMENSION,
+            size: GRID_DIMENSIONS,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D3,
