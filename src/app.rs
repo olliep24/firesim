@@ -39,8 +39,9 @@ impl ApplicationHandler for App {
                 let now = Instant::now();
                 let dt = now - last_render_time;
                 self.last_render_time = Some(now);
+                // TODO: Change to fixed update
                 state.update(dt);
-                match state.render(dt) {
+                match state.render() {
                     Ok(_) => {}
                     // Reconfigure the surface if it's lost or outdated
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
