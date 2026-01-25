@@ -344,6 +344,9 @@ impl State {
             Some("Velocity Field Texture")
         );
 
+        // Set static velocity field.
+        velocity_field_texture.write_velocity_3d_rgba16f_tornado(&queue);
+
         let particle_center_scalar_field_texture_a = Texture::create_compute_texture(
             &device,
             SCALAR_FIELD_CHANNEL_FORMAT,

@@ -12,3 +12,4 @@ log = "0.4.29"
 bytemuck = { version = "1.24", features = [ "derive" ] }
 cgmath = "0.18.0"
 instant = "0.1.13"
+half = "2.7.1"

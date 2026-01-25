@@ -435,6 +435,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "cgmath",
+ "half",
  "instant",
  "log",
  "pollster",
