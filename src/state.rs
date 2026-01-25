@@ -461,6 +461,8 @@ impl State {
                 if self.use_a_to_b { &self.compute_bind_group_a_to_b } else { &self.compute_bind_group_b_to_a },
                 &[]
             );
+            // Ping pong between textures.
+            self.use_a_to_b = !self.use_a_to_b;
         }
 
         {
