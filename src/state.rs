@@ -12,7 +12,7 @@ use crate::camera::{Camera, CameraController, CameraUniform, Projection};
 use crate::instance::{Instance, InstanceRaw};
 use crate::texture::Texture;
 use crate::compute_params::ComputeParams;
-use crate::config::GRID_DIMENSION_LENGTH;
+use crate::config::{GRID_DIMENSION_LENGTH, GRID_VOXEL_SIDE_LENGTH};
 
 /**
 Each channel (RBGA) in the texture will be a 16-bit float.
@@ -21,7 +21,7 @@ TODO: My current machine allows this will the texture usages I need, but add che
 const VECTOR_FIELD_CHANNEL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const SCALAR_FIELD_CHANNEL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
-const SQUARE_SCALE: f32 = 0.35;
+const SQUARE_SCALE: f32 = 0.01;
 
 const VERTICES: &[Vertex] = &[
     // bottom-left
@@ -39,9 +39,7 @@ const INDICES: &[u16] = &[
     0, 2, 3,
 ];
 
-const NUM_INSTANCES_PER_ROW: u32 = 10;
-const INSTANCE_DISPLACEMENT: cgmath::Vector3<f32> =
-    cgmath::Vector3::new(NUM_INSTANCES_PER_ROW as f32 * 0.5, 0.0, NUM_INSTANCES_PER_ROW as f32 * 0.5);
+const NUM_INSTANCES_PER_VOXEL_SIDE: u32 = 2;
 
 pub struct State {
     surface: Surface<'static>,
@@ -196,14 +194,32 @@ impl State {
         );
 
         let num_indices = INDICES.len() as u32;
+        let instance_displacement = GRID_VOXEL_SIDE_LENGTH / NUM_INSTANCES_PER_VOXEL_SIDE as f32;
 
-        let instances = (0..NUM_INSTANCES_PER_ROW).flat_map(|z| {
-            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                let position = cgmath::Vector3 { x: x as f32, y: 0.0, z: z as f32 } - INSTANCE_DISPLACEMENT;
+        let instances = (0..GRID_DIMENSION_LENGTH).flat_map(|x| {
+            (0..GRID_DIMENSION_LENGTH).flat_map(move |y| {
+                (0..GRID_DIMENSION_LENGTH).flat_map(move |z| {
+                    // Create billboards in each voxel.
+                    (0..NUM_INSTANCES_PER_VOXEL_SIDE).flat_map(move |i| {
+                        (0..NUM_INSTANCES_PER_VOXEL_SIDE).flat_map(move |j| {
+                            (0..NUM_INSTANCES_PER_VOXEL_SIDE).map(move |k| {
+                                let x_position = x as f32 * GRID_VOXEL_SIDE_LENGTH + instance_displacement * i as f32;
+                                let y_position = y as f32 * GRID_VOXEL_SIDE_LENGTH + instance_displacement * j as f32;
+                                let z_position = z as f32 * GRID_VOXEL_SIDE_LENGTH + instance_displacement * k as f32;
 
-                Instance {
-                    position
-                }
+                                let position = cgmath::Vector3 {
+                                    x: x_position,
+                                    y: y_position,
+                                    z: z_position,
+                                };
+
+                                Instance {
+                                    position
+                                }
+                            })
+                        })
+                    })
+                })
             })
         }).collect::<Vec<_>>();
 
@@ -305,7 +321,7 @@ impl State {
                     },
                     count: None,
                 },
-                // 2. Particle center scalar field texture input
+                // 2. Density scalar field texture input
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -316,7 +332,7 @@ impl State {
                     },
                     count: None,
                 },
-                // 3. Particle center scalar field texture output
+                // 3. Density scalar field texture output
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -327,7 +343,7 @@ impl State {
                     },
                     count: None,
                 },
-                // 4. Sampler for particle center texture
+                // 4. Sampler for density texture
                 wgpu::BindGroupLayoutEntry {
                     binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -347,16 +363,16 @@ impl State {
         // Set static velocity field.
         velocity_field_texture.write_velocity_3d_rgba16f_tornado(&queue);
 
-        let particle_center_scalar_field_texture_a = Texture::create_compute_texture(
+        let density_scalar_field_texture_a = Texture::create_compute_texture(
             &device,
             SCALAR_FIELD_CHANNEL_FORMAT,
-            Some("Particle Center Scalar Field Texture A")
+            Some("Density Scalar Field Texture A")
         );
 
-        let particle_center_scalar_field_texture_b = Texture::create_compute_texture(
+        let density_scalar_field_texture_b = Texture::create_compute_texture(
             &device,
             SCALAR_FIELD_CHANNEL_FORMAT,
-            Some("Particle Center Scalar Field Texture B")
+            Some("Density Scalar Field Texture B")
         );
 
         // Create two bind groups to ping pong between, controlled by use_a_to_b flag.
@@ -374,20 +390,20 @@ impl State {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(&velocity_field_texture.view)
                 },
-                // binding 2: Particle center scalar field read
+                // binding 2: Density scalar field read
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&particle_center_scalar_field_texture_a.view)
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
                 },
-                // binding 3: Particle center scalar field write
+                // binding 3: Density scalar field write
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&particle_center_scalar_field_texture_b.view)
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
                 },
-                // binding 4: Sampler for particle center scalar field (either a or b work)
+                // binding 4: Sampler for density scalar field (either a or b work)
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: wgpu::BindingResource::Sampler(&particle_center_scalar_field_texture_a.sampler)
+                    resource: wgpu::BindingResource::Sampler(&density_scalar_field_texture_a.sampler)
                 },
             ],
         });
@@ -406,20 +422,20 @@ impl State {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(&velocity_field_texture.view)
                 },
-                // binding 2: Particle center scalar field read
+                // binding 2: Density scalar field read
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&particle_center_scalar_field_texture_b.view)
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
                 },
-                // binding 3: Particle center scalar field write
+                // binding 3: Density scalar field write
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&particle_center_scalar_field_texture_a.view)
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
                 },
-                // binding 4: Sampler for particle center scalar field (either a or b work)
+                // binding 4: Sampler for density scalar field (either a or b work)
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: wgpu::BindingResource::Sampler(&particle_center_scalar_field_texture_b.sampler)
+                    resource: wgpu::BindingResource::Sampler(&density_scalar_field_texture_b.sampler)
                 },
             ],
         });

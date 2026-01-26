@@ -11,9 +11,9 @@ var<uniform> params: Params;
 @group(0) @binding(1)
 var velocity_field_texture: texture_3d<f32>;
 @group(0) @binding(2)
-var particle_center_scalar_field_texture_read: texture_3d<f32>;
+var density_scalar_field_texture_read: texture_3d<f32>;
 @group(0) @binding(3)
-var particle_center_scalar_field_texture_write: texture_storage_3d<rgba16float, write>;
+var density_scalar_field_texture_write: texture_storage_3d<rgba16float, write>;
 @group(0) @binding(4)
 var field_sampler: sampler;
 
@@ -58,14 +58,14 @@ fn main (
     // Sampler is clamped to edge, so no out of bounds issues.
     // TODO: Investigate bounding conditions.
     let backtraced_center = textureSampleLevel(
-        particle_center_scalar_field_texture_read,
+        density_scalar_field_texture_read,
         field_sampler,
         uvw_backtrace,
         0.0
     ).x;
 
     textureStore(
-        particle_center_scalar_field_texture_write,
+        density_scalar_field_texture_write,
         vec3<i32>(i32(gid.x), i32(gid.y), i32(gid.z)),
         vec4<f32>(backtraced_center, 0.0, 0.0, 0.0)
     );

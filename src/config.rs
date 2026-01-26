@@ -5,3 +5,4 @@ pub const GRID_DIMENSIONS: wgpu::Extent3d = wgpu::Extent3d {
     height: GRID_DIMENSION_LENGTH,
     depth_or_array_layers: GRID_DIMENSION_LENGTH,
 };
+pub const GRID_VOXEL_SIDE_LENGTH: f32 = 0.1;
