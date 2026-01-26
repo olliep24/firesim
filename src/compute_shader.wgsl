@@ -4,6 +4,8 @@ struct Params {
     width: u32,
     height: u32,
     depth: u32,
+    box_min: vec4<f32>,
+    box_max: vec4<f32>,
 }
 
 @group(0) @binding(0)

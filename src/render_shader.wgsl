@@ -6,6 +6,17 @@ struct CameraUniform {
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
+struct Params {
+    dt: f32,
+    width: u32,
+    height: u32,
+    depth: u32,
+    box_min: vec4<f32>,
+    box_max: vec4<f32>,
+}
+@group(2) @binding(0)
+var<uniform> params: Params;
+
 // Vertex shader
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -15,6 +26,7 @@ struct VertexInput {
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec3<f32>,
+    @location(1) world_position: vec3<f32>,
 };
 
 struct InstanceInput {
@@ -51,11 +63,24 @@ fn vs_main(
     var out: VertexOutput;
     out.color = model.color;
     out.clip_position = camera.proj * camera.view * vec4<f32>(vertex_position_world, 1.0);
+    out.world_position = vertex_position_world;
     return out;
 }
+
+@group(1) @binding(0)
+var density_scalar_field_texture: texture_3d<f32>;
+@group(1) @binding(1)
+var field_sampler: sampler;
 
 // Fragment shader
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4(in.color, 1.0);
+    let box_min = params.box_min.xyz;
+    let box_max = params.box_max.xyz;
+
+    let uvw = (in.world_position - box_min) / (box_max - box_min);
+    let d = textureSampleLevel(density_scalar_field_texture, field_sampler, uvw, 0.0).x;
+    let alpha = 1.0 - exp(-8.0 * d);
+
+    return vec4(in.color, alpha);
 }

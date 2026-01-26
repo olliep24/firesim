@@ -8,6 +8,8 @@ pub struct Texture {
     pub sampler: wgpu::Sampler,
 }
 
+const VELOCITY_SCALE: f32 = 5.0;
+
 impl Texture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
@@ -139,7 +141,7 @@ impl Texture {
                         (0.0, 0.0, 0.0)
                     } else {
                         let inv_r = 1.0 / r2.sqrt();
-                        (pz * inv_r, 0.0, -px * inv_r)
+                        (pz * inv_r * VELOCITY_SCALE, 0.0, -px * inv_r * VELOCITY_SCALE)
                     };
 
                     let r16 = f16::from_f32(vx).to_bits();
@@ -175,6 +177,173 @@ impl Texture {
                 offset: 0,
                 bytes_per_row: Some(bytes_per_row),
                 rows_per_image: Some(rows_per_image),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: depth,
+            },
+        );
+    }
+
+    /// Clears the given texture's channels to all 0.0 with a rgba16f format.
+    pub fn _clear(&self, queue: &wgpu::Queue) {
+        let width = GRID_DIMENSION_LENGTH;
+        let height = GRID_DIMENSION_LENGTH;
+        let depth = GRID_DIMENSION_LENGTH;
+
+        // Zero out textures
+        let bytes_per_voxel = 8usize;
+        let voxel_count = (width * height * depth) as usize;
+        let data = vec![0u8; voxel_count * bytes_per_voxel];
+
+        // 8 bytes per texel
+        let bytes_per_row = width * 8;
+        let rows_per_image = height;
+
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(bytes_per_row),
+                rows_per_image: Some(rows_per_image),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: depth,
+            },
+        );
+    }
+
+    /// Write a density point into the entire 3D RGBA16F texture.
+    /// This overwrites the whole texture (good for init / reset).
+    pub fn _write_density_single_voxel_rgba16f(
+        &self,
+        queue: &wgpu::Queue,
+        voxel: [u32; 3],
+        density: f32,
+    ) {
+        let width = GRID_DIMENSION_LENGTH;
+        let height = GRID_DIMENSION_LENGTH;
+        let depth = GRID_DIMENSION_LENGTH;
+
+        let bytes_per_voxel: usize = 8; // RGBA16F
+        let voxel_count = (width as usize) * (height as usize) * (depth as usize);
+        let mut data = vec![0u8; voxel_count * bytes_per_voxel];
+
+        // Bound
+        let x = voxel[0].min(width - 1);
+        let y = voxel[1].min(height - 1);
+        let z = voxel[2].min(depth - 1);
+
+        let i = (x as usize)
+            + (width as usize) * ((y as usize) + (height as usize) * (z as usize));
+        let base = i * bytes_per_voxel;
+
+        let r = f16::from_f32(density).to_bits();
+        let g = f16::from_f32(0.0).to_bits();
+        let b = f16::from_f32(0.0).to_bits();
+        let a = f16::from_f32(0.0).to_bits();
+
+        data[base + 0..base + 2].copy_from_slice(&r.to_le_bytes());
+        data[base + 2..base + 4].copy_from_slice(&g.to_le_bytes());
+        data[base + 4..base + 6].copy_from_slice(&b.to_le_bytes());
+        data[base + 6..base + 8].copy_from_slice(&a.to_le_bytes());
+
+        let bytes_per_row = width * 8;
+        let rows_per_image = height;
+
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(bytes_per_row),
+                rows_per_image: Some(rows_per_image),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: depth
+            },
+        );
+    }
+
+    /// Write a smooth density blob into the entire 3D RGBA16F texture.
+    /// This overwrites the whole texture (good for init / reset).
+    pub fn write_density_blob_rgba16f(
+        &self,
+        queue: &wgpu::Queue,
+        center: [f32; 3],
+        radius: f32,
+        peak: f32,
+    ) {
+        let width = GRID_DIMENSION_LENGTH;
+        let height = GRID_DIMENSION_LENGTH;
+        let depth = GRID_DIMENSION_LENGTH;
+
+        let bytes_per_voxel: usize = 8; // RGBA16F
+        let voxel_count = (width as usize) * (height as usize) * (depth as usize);
+        let mut data = vec![0u8; voxel_count * bytes_per_voxel];
+
+        let r2 = radius * radius;
+        let sigma2 = (radius * 0.35).max(1e-6).powi(2);
+
+        for z in 0..depth {
+            for y in 0..height {
+                for x in 0..width {
+                    let dx = x as f32 + 0.5 - center[0];
+                    let dy = y as f32 + 0.5 - center[1];
+                    let dz = z as f32 + 0.5 - center[2];
+                    let dist2 = dx*dx + dy*dy + dz*dz;
+
+                    let val = if dist2 <= r2 {
+                        peak * (-dist2 / (2.0 * sigma2)).exp()
+                    } else {
+                        0.0
+                    };
+
+                    let r = f16::from_f32(val).to_bits();
+                    let g = f16::from_f32(0.0).to_bits();
+                    let b = f16::from_f32(0.0).to_bits();
+                    let a = f16::from_f32(0.0).to_bits();
+
+                    let i = (x as usize)
+                        + (width as usize) * ((y as usize) + (height as usize) * (z as usize));
+                    let base = i * bytes_per_voxel;
+
+                    data[base + 0..base + 2].copy_from_slice(&r.to_le_bytes());
+                    data[base + 2..base + 4].copy_from_slice(&g.to_le_bytes());
+                    data[base + 4..base + 6].copy_from_slice(&b.to_le_bytes());
+                    data[base + 6..base + 8].copy_from_slice(&a.to_le_bytes());
+                }
+            }
+        }
+
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 8),
+                rows_per_image: Some(height),
             },
             wgpu::Extent3d {
                 width,

@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration};
 use wgpu::util::DeviceExt;
 use winit::event::ElementState;
@@ -60,7 +59,10 @@ pub struct State {
     num_indices: u32,
     instances: Vec<Instance>,
     instance_buffer: wgpu::Buffer,
+    density_texture_bind_group: wgpu::BindGroup,
     compute_pipeline: wgpu::ComputePipeline,
+    compute_params: ComputeParams,
+    compute_params_bind_group: wgpu::BindGroup,
     compute_params_buffer: wgpu::Buffer,
     use_a_to_b: bool,
     compute_bind_group_a_to_b: wgpu::BindGroup,
@@ -168,15 +170,6 @@ impl State {
             label: Some("Camera Bind Group"),
         });
 
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[
-                    &camera_bind_group_layout,
-                ],
-                push_constant_ranges: &[],
-            });
-
         let vertex_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Vertex Buffer"),
@@ -223,6 +216,11 @@ impl State {
             })
         }).collect::<Vec<_>>();
 
+        let box_min = [0.0, 0.0, 0.0, 0.0];
+
+        let extent = GRID_DIMENSION_LENGTH as f32 * GRID_VOXEL_SIDE_LENGTH;
+        let box_max = [extent, extent, extent, 0.0];
+
         let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
         let instance_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -232,61 +230,12 @@ impl State {
             }
         );
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &render_shader,
-                entry_point: Some("vs_main"),
-                buffers: &[
-                    Vertex::desc(), InstanceRaw::desc()
-                ],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &render_shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLIP_CONTROL
-                unclipped_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: Texture::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-            cache: None,
-        });
-
         let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Compute Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("compute_shader.wgsl").into()),
         });
 
-        let compute_params = ComputeParams::new(Duration::new(0, 0));
+        let compute_params = ComputeParams::new(box_min, box_max);
 
         let compute_params_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -296,10 +245,41 @@ impl State {
             }
         );
 
+        let compute_params_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Compute Pipeline Bind Group Layout"),
+            entries: &[
+                // 0. Uniform buffer for compute params
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ]
+        });
+
+        // Create two bind groups to ping pong between, controlled by use_a_to_b flag.
+        let compute_params_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Compute Params Bind Group"),
+            layout: &compute_params_bind_group_layout,
+            entries: &[
+                // binding 0: Compute params
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: compute_params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
         let compute_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Compute Pipeline Bind Group Layout"),
             entries: &[
                 // 0. Uniform buffer for compute params
+                // TODO: Remove compute params and use bind group.
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -373,6 +353,13 @@ impl State {
             &device,
             SCALAR_FIELD_CHANNEL_FORMAT,
             Some("Density Scalar Field Texture B")
+        );
+
+        density_scalar_field_texture_a.write_density_blob_rgba16f(
+            &queue,
+            [16.0, 16.0, 16.0],
+            4.0,
+            1.0
         );
 
         // Create two bind groups to ping pong between, controlled by use_a_to_b flag.
@@ -459,6 +446,107 @@ impl State {
             cache: None,
         });
 
+        let density_texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Density Texture Bind Group Layout"),
+            entries: &[
+                // 0. Density scalar field texture input
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // 1. Sampler for density texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                }
+            ]
+        });
+
+        let density_texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Texture Bind Group"),
+            layout: &density_texture_bind_group_layout,
+            entries: &[
+                // binding 0: Density scalar field read
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
+                },
+                // binding 1: Sampler for density scalar field (either a or b work)
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&density_scalar_field_texture_a.sampler)
+                },
+            ],
+        });
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[
+                    &camera_bind_group_layout,
+                    &density_texture_bind_group_layout,
+                    &compute_params_bind_group_layout,
+                ],
+                push_constant_ranges: &[],
+            });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &render_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[
+                    Vertex::desc(), InstanceRaw::desc()
+                ],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &render_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
+                polygon_mode: wgpu::PolygonMode::Fill,
+                // Requires Features::DEPTH_CLIP_CONTROL
+                unclipped_depth: false,
+                // Requires Features::CONSERVATIVE_RASTERIZATION
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: Texture::DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::LessEqual,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+
         Ok(Self {
             surface,
             device,
@@ -478,7 +566,10 @@ impl State {
             num_indices,
             instances,
             instance_buffer,
+            density_texture_bind_group,
             compute_pipeline,
+            compute_params,
+            compute_params_bind_group,
             compute_params_buffer,
             use_a_to_b: true,
             compute_bind_group_a_to_b,
@@ -510,8 +601,9 @@ impl State {
         can do some speed optimizations, which it couldn't if we could access the buffer via
         the CPU.
          */
+        self.compute_params.update_dt(dt);
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
-        self.queue.write_buffer(&self.compute_params_buffer, 0, bytemuck::cast_slice(&[ComputeParams::new(dt)]));
+        self.queue.write_buffer(&self.compute_params_buffer, 0, bytemuck::cast_slice(&[self.compute_params]));
     }
 
     pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, key_state: ElementState) {
@@ -598,6 +690,8 @@ impl State {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.density_texture_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.compute_params_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
