@@ -7,16 +7,17 @@ struct Params {
     box_min: vec4<f32>,
     box_max: vec4<f32>,
 }
-
 @group(0) @binding(0)
 var<uniform> params: Params;
-@group(0) @binding(1)
+
+// Texture bindings
+@group(1) @binding(0)
 var velocity_field_texture: texture_3d<f32>;
-@group(0) @binding(2)
+@group(1) @binding(1)
 var density_scalar_field_texture_read: texture_3d<f32>;
-@group(0) @binding(3)
+@group(1) @binding(2)
 var density_scalar_field_texture_write: texture_storage_3d<rgba16float, write>;
-@group(0) @binding(4)
+@group(1) @binding(3)
 var field_sampler: sampler;
 
 @compute

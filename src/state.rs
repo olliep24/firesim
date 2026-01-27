@@ -11,7 +11,7 @@ use crate::camera::{Camera, CameraController, CameraUniform, Projection};
 use crate::instance::{Instance, InstanceRaw};
 use crate::texture::Texture;
 use crate::compute_params::ComputeParams;
-use crate::config::{GRID_DIMENSION_LENGTH, GRID_VOXEL_SIDE_LENGTH};
+use crate::config::{GRID_DIMENSION_LENGTH, GRID_VOXEL_SIDE_LENGTH, NUM_INSTANCES_PER_VOXEL_SIDE};
 
 /**
 Each channel (RBGA) in the texture will be a 16-bit float.
@@ -37,8 +37,6 @@ const INDICES: &[u16] = &[
     0, 1, 2,
     0, 2, 3,
 ];
-
-const NUM_INSTANCES_PER_VOXEL_SIDE: u32 = 2;
 
 pub struct State {
     surface: Surface<'static>,
@@ -128,8 +126,9 @@ impl State {
 
         let depth_texture = Texture::create_depth_texture(&device, &config, "depth_texture");
 
-        let camera = Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
-        let camera_controller = CameraController::new(4.0, 0.4);
+        // TODO: Move these to constants
+        let camera = Camera::new((0.6125, 1.25, 2.5), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
+        let camera_controller = CameraController::new(1.0, 0.2);
         let projection = Projection::new(config.width, config.height, cgmath::Deg(45.0), 0.1, 100.0);
 
         let mut camera_uniform = CameraUniform::new();
@@ -262,7 +261,6 @@ impl State {
             ]
         });
 
-        // Create two bind groups to ping pong between, controlled by use_a_to_b flag.
         let compute_params_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Compute Params Bind Group"),
             layout: &compute_params_bind_group_layout,
@@ -278,19 +276,18 @@ impl State {
         let compute_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Compute Pipeline Bind Group Layout"),
             entries: &[
-                // 0. Uniform buffer for compute params
-                // TODO: Remove compute params and use bind group.
+                // 0. Velocity vector field texture.
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     },
                     count: None,
                 },
-                // 1. Velocity vector field texture.
+                // 1. Density scalar field texture input
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -301,20 +298,9 @@ impl State {
                     },
                     count: None,
                 },
-                // 2. Density scalar field texture input
+                // 2. Density scalar field texture output
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // 3. Density scalar field texture output
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
@@ -323,9 +309,9 @@ impl State {
                     },
                     count: None,
                 },
-                // 4. Sampler for density texture
+                // 3. Sampler for density texture
                 wgpu::BindGroupLayoutEntry {
-                    binding: 4,
+                    binding: 3,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
@@ -367,29 +353,24 @@ impl State {
             label: Some("Compute Bind Group A to B"),
             layout: &compute_bind_group_layout,
             entries: &[
-                // binding 0: Compute params
+                // binding 0: Velocity field read
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: compute_params_buffer.as_entire_binding(),
-                },
-                // binding 1: Velocity field read
-                wgpu::BindGroupEntry {
-                    binding: 1,
                     resource: wgpu::BindingResource::TextureView(&velocity_field_texture.view)
                 },
-                // binding 2: Density scalar field read
+                // binding 1: Density scalar field read
                 wgpu::BindGroupEntry {
-                    binding: 2,
+                    binding: 1,
                     resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
                 },
-                // binding 3: Density scalar field write
+                // binding 2: Density scalar field write
                 wgpu::BindGroupEntry {
-                    binding: 3,
+                    binding: 2,
                     resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
                 },
-                // binding 4: Sampler for density scalar field (either a or b work)
+                // binding 3: Sampler for density scalar field (either a or b work)
                 wgpu::BindGroupEntry {
-                    binding: 4,
+                    binding: 3,
                     resource: wgpu::BindingResource::Sampler(&density_scalar_field_texture_a.sampler)
                 },
             ],
@@ -399,29 +380,24 @@ impl State {
             label: Some("Compute Bind Group A to B"),
             layout: &compute_bind_group_layout,
             entries: &[
-                // binding 0: Compute params
+                // binding 0: Velocity field read
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: compute_params_buffer.as_entire_binding(),
-                },
-                // binding 1: Velocity field read
-                wgpu::BindGroupEntry {
-                    binding: 1,
                     resource: wgpu::BindingResource::TextureView(&velocity_field_texture.view)
                 },
-                // binding 2: Density scalar field read
+                // binding 1: Density scalar field read
                 wgpu::BindGroupEntry {
-                    binding: 2,
+                    binding: 1,
                     resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
                 },
-                // binding 3: Density scalar field write
+                // binding 2: Density scalar field write
                 wgpu::BindGroupEntry {
-                    binding: 3,
+                    binding: 2,
                     resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
                 },
-                // binding 4: Sampler for density scalar field (either a or b work)
+                // binding 3: Sampler for density scalar field (either a or b work)
                 wgpu::BindGroupEntry {
-                    binding: 4,
+                    binding: 3,
                     resource: wgpu::BindingResource::Sampler(&density_scalar_field_texture_b.sampler)
                 },
             ],
@@ -431,6 +407,7 @@ impl State {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Compute Pipeline Layout"),
                 bind_group_layouts: &[
+                    &compute_params_bind_group_layout,
                     &compute_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
@@ -492,8 +469,8 @@ impl State {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
                     &camera_bind_group_layout,
-                    &density_texture_bind_group_layout,
                     &compute_params_bind_group_layout,
+                    &density_texture_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -524,11 +501,8 @@ impl State {
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                 polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLIP_CONTROL
                 unclipped_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -637,13 +611,12 @@ impl State {
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
             compute_pass.set_pipeline(&self.compute_pipeline);
 
+            compute_pass.set_bind_group(0, &self.compute_params_bind_group, &[]);
             compute_pass.set_bind_group(
-                0,
+                1,
                 if self.use_a_to_b { &self.compute_bind_group_a_to_b } else { &self.compute_bind_group_b_to_a },
                 &[]
             );
-            // Ping pong between textures.
-            self.use_a_to_b = !self.use_a_to_b;
 
             // We specified 4 threads per dimension in the compute shader.
             let num_dispatches_per_dimension = GRID_DIMENSION_LENGTH / 4;
@@ -652,6 +625,9 @@ impl State {
                 num_dispatches_per_dimension,
                 num_dispatches_per_dimension
             );
+
+            // Ping pong between textures.
+            self.use_a_to_b = !self.use_a_to_b;
         }
 
         {
@@ -690,8 +666,8 @@ impl State {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.density_texture_bind_group, &[]);
-            render_pass.set_bind_group(2, &self.compute_params_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.compute_params_bind_group, &[]);
+            render_pass.set_bind_group(2, &self.density_texture_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);

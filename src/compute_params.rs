@@ -7,12 +7,21 @@ use crate::config::GRID_DIMENSION_LENGTH;
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ComputeParams {
+    // TODO: Make a grid struct to contain all the information about the grid.
+    // It shouldn't be stored here. This is only the means of transportation.
     dt: f32,
+    /// Number of voxels along the X axis of the simulation grid.
     width: u32,
+    /// Number of voxels along the Y axis of the simulation grid.
     height: u32,
+    /// Number of voxels along the Z axis of the simulation grid.
     depth: u32,
-    box_min: [f32; 4], // xyz + padding
-    box_max: [f32; 4], // xyz + padding
+    /// Minimum point in world space for the simulation grid.
+    /// xyz + padding.
+    box_min: [f32; 4],
+    /// Maximum point in world space for the simulation grid.
+    /// // xyz + padding.
+    box_max: [f32; 4],
 }
 
 impl ComputeParams {

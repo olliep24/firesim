@@ -14,7 +14,7 @@ struct Params {
     box_min: vec4<f32>,
     box_max: vec4<f32>,
 }
-@group(2) @binding(0)
+@group(1) @binding(0)
 var<uniform> params: Params;
 
 // Vertex shader
@@ -67,9 +67,10 @@ fn vs_main(
     return out;
 }
 
-@group(1) @binding(0)
+// Texture bindings
+@group(2) @binding(0)
 var density_scalar_field_texture: texture_3d<f32>;
-@group(1) @binding(1)
+@group(2) @binding(1)
 var field_sampler: sampler;
 
 // Fragment shader

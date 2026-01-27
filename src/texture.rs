@@ -1,5 +1,5 @@
 use half::f16;
-use crate::config::{GRID_DIMENSIONS, GRID_DIMENSION_LENGTH};
+use crate::config::{GRID_DIMENSIONS, GRID_DIMENSION_LENGTH, VELOCITY_SCALE};
 
 pub struct Texture {
     #[allow(unused)]
@@ -7,8 +7,6 @@ pub struct Texture {
     pub view: wgpu::TextureView,
     pub sampler: wgpu::Sampler,
 }
-
-const VELOCITY_SCALE: f32 = 5.0;
 
 impl Texture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
