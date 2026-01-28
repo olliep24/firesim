@@ -20,12 +20,15 @@ pub struct ComputeParams {
     /// xyz + padding.
     box_min: [f32; 4],
     /// Maximum point in world space for the simulation grid.
-    /// // xyz + padding.
+    /// xyz + padding.
     box_max: [f32; 4],
+    /// Number of pixels [width, height]
+    viewport: [f32; 2],
+    _pad0: [f32; 2],
 }
 
 impl ComputeParams {
-    pub fn new(box_min: [f32; 4], box_max: [f32; 4]) -> Self {
+    pub fn new(box_min: [f32; 4], box_max: [f32; 4], config: &wgpu::SurfaceConfiguration) -> Self {
         Self {
             dt: Duration::new(0, 0).as_secs_f32(),
             width: GRID_DIMENSION_LENGTH,
@@ -33,10 +36,16 @@ impl ComputeParams {
             depth: GRID_DIMENSION_LENGTH,
             box_min,
             box_max,
+            viewport: [config.width as f32, config.height as f32],
+            _pad0: [0.0; 2],
         }
     }
 
-    pub fn update_dt(&mut self, dt: Duration) {
+    pub fn update_dt(&mut self, dt: Duration, ) {
         self.dt = dt.as_secs_f32();
+    }
+
+    pub fn update_viewport(&mut self, config: &wgpu::SurfaceConfiguration) {
+        self.viewport = [config.width as f32, config.height as f32];
     }
 }

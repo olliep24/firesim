@@ -6,6 +6,8 @@ struct Params {
     depth: u32,
     box_min: vec4<f32>,
     box_max: vec4<f32>,
+    viewport: vec2<f32>,
+    _pad0: vec2<f32>
 }
 @group(0) @binding(0)
 var<uniform> params: Params;

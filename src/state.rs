@@ -6,12 +6,10 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::KeyCode;
 use winit::window::Window;
 
-use crate::vertex::Vertex;
 use crate::camera::{Camera, CameraController, CameraUniform, Projection};
-use crate::instance::{Instance, InstanceRaw};
 use crate::texture::Texture;
 use crate::compute_params::ComputeParams;
-use crate::config::{GRID_DIMENSION_LENGTH, GRID_VOXEL_SIDE_LENGTH, NUM_INSTANCES_PER_VOXEL_SIDE};
+use crate::config::{GRID_DIMENSION_LENGTH, GRID_VOXEL_SIDE_LENGTH};
 
 /**
 Each channel (RBGA) in the texture will be a 16-bit float.
@@ -19,24 +17,6 @@ TODO: My current machine allows this will the texture usages I need, but add che
 */
 const VECTOR_FIELD_CHANNEL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const SCALAR_FIELD_CHANNEL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-
-const SQUARE_SCALE: f32 = 0.01;
-
-const VERTICES: &[Vertex] = &[
-    // bottom-left
-    Vertex { position: [-SQUARE_SCALE, -SQUARE_SCALE, 0.0], color: [SQUARE_SCALE, 0.0, SQUARE_SCALE] },
-    // bottom-right
-    Vertex { position: [SQUARE_SCALE, -SQUARE_SCALE, 0.0], color: [SQUARE_SCALE, 0.0, SQUARE_SCALE] },
-    // top-right
-    Vertex { position: [SQUARE_SCALE, SQUARE_SCALE, 0.0], color: [SQUARE_SCALE, 0.0, SQUARE_SCALE] },
-    // top-left
-    Vertex { position: [-SQUARE_SCALE, SQUARE_SCALE, 0.0], color: [SQUARE_SCALE, 0.0, SQUARE_SCALE] },
-];
-
-const INDICES: &[u16] = &[
-    0, 1, 2,
-    0, 2, 3,
-];
 
 pub struct State {
     surface: Surface<'static>,
@@ -52,11 +32,6 @@ pub struct State {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    num_indices: u32,
-    instances: Vec<Instance>,
-    instance_buffer: wgpu::Buffer,
     density_texture_bind_group: wgpu::BindGroup,
     compute_pipeline: wgpu::ComputePipeline,
     compute_params: ComputeParams,
@@ -131,8 +106,8 @@ impl State {
         let camera_controller = CameraController::new(1.0, 0.2);
         let projection = Projection::new(config.width, config.height, cgmath::Deg(45.0), 0.1, 100.0);
 
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&camera, &projection);
+        let mut camera_uniform = CameraUniform::default();
+        camera_uniform.update(&camera, &projection);
 
         let camera_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -146,7 +121,7 @@ impl State {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -169,72 +144,17 @@ impl State {
             label: Some("Camera Bind Group"),
         });
 
-        let vertex_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(VERTICES),
-                usage: wgpu::BufferUsages::VERTEX,
-            }
-        );
-
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(INDICES),
-                usage: wgpu::BufferUsages::INDEX,
-            }
-        );
-
-        let num_indices = INDICES.len() as u32;
-        let instance_displacement = GRID_VOXEL_SIDE_LENGTH / NUM_INSTANCES_PER_VOXEL_SIDE as f32;
-
-        let instances = (0..GRID_DIMENSION_LENGTH).flat_map(|x| {
-            (0..GRID_DIMENSION_LENGTH).flat_map(move |y| {
-                (0..GRID_DIMENSION_LENGTH).flat_map(move |z| {
-                    // Create billboards in each voxel.
-                    (0..NUM_INSTANCES_PER_VOXEL_SIDE).flat_map(move |i| {
-                        (0..NUM_INSTANCES_PER_VOXEL_SIDE).flat_map(move |j| {
-                            (0..NUM_INSTANCES_PER_VOXEL_SIDE).map(move |k| {
-                                let x_position = x as f32 * GRID_VOXEL_SIDE_LENGTH + instance_displacement * i as f32;
-                                let y_position = y as f32 * GRID_VOXEL_SIDE_LENGTH + instance_displacement * j as f32;
-                                let z_position = z as f32 * GRID_VOXEL_SIDE_LENGTH + instance_displacement * k as f32;
-
-                                let position = cgmath::Vector3 {
-                                    x: x_position,
-                                    y: y_position,
-                                    z: z_position,
-                                };
-
-                                Instance {
-                                    position
-                                }
-                            })
-                        })
-                    })
-                })
-            })
-        }).collect::<Vec<_>>();
-
         let box_min = [0.0, 0.0, 0.0, 0.0];
 
         let extent = GRID_DIMENSION_LENGTH as f32 * GRID_VOXEL_SIDE_LENGTH;
         let box_max = [extent, extent, extent, 0.0];
-
-        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-        let instance_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Instance Buffer"),
-                contents: bytemuck::cast_slice(&instance_data),
-                usage: wgpu::BufferUsages::VERTEX,
-            }
-        );
 
         let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Compute Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("compute_shader.wgsl").into()),
         });
 
-        let compute_params = ComputeParams::new(box_min, box_max);
+        let compute_params = ComputeParams::new(box_min, box_max, &config);
 
         let compute_params_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -481,9 +401,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &render_shader,
                 entry_point: Some("vs_main"),
-                buffers: &[
-                    Vertex::desc(), InstanceRaw::desc()
-                ],
+                buffers: &[],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -535,11 +453,6 @@ impl State {
             camera_buffer,
             camera_bind_group,
             render_pipeline,
-            vertex_buffer,
-            index_buffer,
-            num_indices,
-            instances,
-            instance_buffer,
             density_texture_bind_group,
             compute_pipeline,
             compute_params,
@@ -560,13 +473,14 @@ impl State {
             self.surface.configure(&self.device, &self.config);
             self.projection.resize(width, height);
             self.depth_texture = Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
+            self.compute_params.update_viewport(&self.config);
             self.is_surface_configured = true;
         }
     }
 
     pub fn update(&mut self, dt: instant::Duration) {
         self.camera_controller.update_camera(&mut self.camera, dt);
-        self.camera_uniform.update_view_proj(&self.camera, &self.projection);
+        self.camera_uniform.update(&self.camera, &self.projection);
         /*
         Potential to optimize:
         We can create a separate buffer and copy its contents to our camera_buffer. The new buffer
@@ -668,10 +582,9 @@ impl State {
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.compute_params_bind_group, &[]);
             render_pass.set_bind_group(2, &self.density_texture_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            render_pass.draw_indexed(0..self.num_indices, 0,0..self.instances.len() as _);
+
+            // Full screen triangle, no vertex/index buffer.
+            render_pass.draw(0..3, 0..1);
         }
 
         // submit will accept anything that implements IntoIter

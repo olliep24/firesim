@@ -1,8 +1,6 @@
 mod app;
 mod state;
-mod vertex;
 mod camera;
-mod instance;
 mod texture;
 mod compute_params;
 mod config;
