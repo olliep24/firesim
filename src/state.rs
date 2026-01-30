@@ -196,7 +196,7 @@ impl State {
         let compute_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Compute Pipeline Bind Group Layout"),
             entries: &[
-                // 0. Velocity vector field texture.
+                // 0. Velocity vector field texture read.
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -207,20 +207,9 @@ impl State {
                     },
                     count: None,
                 },
-                // 1. Density scalar field texture input
+                // 1. Velocity vector field texture write.
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // 2. Density scalar field texture output
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
@@ -229,9 +218,31 @@ impl State {
                     },
                     count: None,
                 },
-                // 3. Sampler for density texture
+                // 2. Density scalar field texture input
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // 3. Density scalar field texture output
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: SCALAR_FIELD_CHANNEL_FORMAT,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                    },
+                    count: None,
+                },
+                // 4. Sampler for density texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
@@ -240,14 +251,20 @@ impl State {
         });
 
         // TODO: Add note on why we're using a texture here instead of a buffer.
-        let velocity_field_texture = Texture::create_compute_texture(
+        let velocity_vector_field_texture_a = Texture::create_compute_texture(
+            &device,
+            VECTOR_FIELD_CHANNEL_FORMAT,
+            Some("Velocity Field Texture")
+        );
+
+        let velocity_vector_field_texture_b = Texture::create_compute_texture(
             &device,
             VECTOR_FIELD_CHANNEL_FORMAT,
             Some("Velocity Field Texture")
         );
 
         // Set static velocity field.
-        velocity_field_texture.write_velocity_3d_rgba16f_tornado(&queue);
+        velocity_vector_field_texture_a.write_velocity_3d_rgba16f_tornado(&queue);
 
         let density_scalar_field_texture_a = Texture::create_compute_texture(
             &device,
@@ -273,24 +290,29 @@ impl State {
             label: Some("Compute Bind Group A to B"),
             layout: &compute_bind_group_layout,
             entries: &[
-                // binding 0: Velocity field read
+                // binding 0: Velocity vector field read
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&velocity_field_texture.view)
+                    resource: wgpu::BindingResource::TextureView(&velocity_vector_field_texture_a.view)
                 },
-                // binding 1: Density scalar field read
+                // binding 1: Velocity vector field write
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
+                    resource: wgpu::BindingResource::TextureView(&velocity_vector_field_texture_b.view)
                 },
-                // binding 2: Density scalar field write
+                // binding 2: Density scalar field read
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
                 },
-                // binding 3: Sampler for density scalar field (either a or b work)
+                // binding 3: Density scalar field write
                 wgpu::BindGroupEntry {
                     binding: 3,
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
+                },
+                // binding 4: Sampler. Will work for scalar or velocity field.
+                wgpu::BindGroupEntry {
+                    binding: 4,
                     resource: wgpu::BindingResource::Sampler(&density_scalar_field_texture_a.sampler)
                 },
             ],
@@ -300,25 +322,30 @@ impl State {
             label: Some("Compute Bind Group A to B"),
             layout: &compute_bind_group_layout,
             entries: &[
-                // binding 0: Velocity field read
+                // binding 0: Velocity vector field read
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&velocity_field_texture.view)
+                    resource: wgpu::BindingResource::TextureView(&velocity_vector_field_texture_b.view)
                 },
-                // binding 1: Density scalar field read
+                // binding 1: Velocity vector field write
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
+                    resource: wgpu::BindingResource::TextureView(&velocity_vector_field_texture_a.view)
                 },
-                // binding 2: Density scalar field write
+                // binding 2: Density scalar field read
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
                 },
-                // binding 3: Sampler for density scalar field (either a or b work)
+                // binding 3: Density scalar field write
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::Sampler(&density_scalar_field_texture_b.sampler)
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
+                },
+                // binding 4: Sampler. Will work for scalar or velocity field.
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(&density_scalar_field_texture_a.sampler)
                 },
             ],
         });
