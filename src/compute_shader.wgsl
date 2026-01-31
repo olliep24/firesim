@@ -35,8 +35,19 @@ fn main (
         return;
     }
 
+    // Add sources to the scalar fields.
+
     advect_density(gid);
     advect_velocity(gid);
+
+    // For now we are going to assume that the fluid is invisid. No diffusion
+    // TODO: Investigate diffusion for fire simulation (might not be necessary).
+
+    // Add forces to the velocity field.
+
+    // Solve for possion pressure equation.
+
+    // Substract pressure gradient to achieve stability.
 }
 
 fn advect_density(gid: vec3<u32>) {
