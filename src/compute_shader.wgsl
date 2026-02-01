@@ -77,11 +77,13 @@ fn advect_velocity(gid: vec3<u32>) {
 
     // store velocity in RGB (A unused)
     let backtraced_velocity = textureSampleLevel(velocity_field_texture_read, field_sampler, uvw_back, 0.0).xyz;
+    let backtraced_force_source = textureSampleLevel(force_source, field_sampler, uvw_back, 0.0).xyz;
+    let total_backtraced_velocity = backtraced_velocity + backtraced_force_source;
 
     textureStore(
         velocity_feild_texture_write,
         vec3<i32>(gid),
-        vec4<f32>(backtraced_velocity, 0.0)
+        vec4<f32>(total_backtraced_velocity, 0.0)
     );
 }
 

@@ -549,12 +549,12 @@ impl State {
             label: Some("Source Bind Group"),
             layout: &source_bind_group_layout,
             entries: &[
-                // binding 0: Velocity vector field a
+                // binding 0: Velocity vector field
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureView(&force_source_texture.view)
                 },
-                // binding 1: Density scalar field a
+                // binding 1: Density scalar field
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(&density_source_texture.view)
@@ -689,7 +689,9 @@ impl State {
             label: Some("Render Encoder"),
         });
 
-        // Add sources to density and force if present.
+        /* Sources and Scalar Fields Update */
+
+        // Add sources to density and forces. (Later will be fuel, temperature, and smoke density).
         if self.pending_input {
             {
                 let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
@@ -706,6 +708,20 @@ impl State {
                 );
             }
         }
+
+        // Advect scalars
+
+        // Combustion reaction. Use fuel to create heat and smoke. Heat cooling as well.
+
+        // Add forces from scalars (e.g. buoyancy from temperature).
+
+        /* Velocity Field Update */
+
+        // Advect velocity
+
+        // Add forces
+
+        // Project
 
         // Simulate
         {
@@ -752,6 +768,7 @@ impl State {
             self.pending_input = false;
         }
 
+        /* Render simulation result */
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
