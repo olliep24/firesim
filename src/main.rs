@@ -4,6 +4,7 @@ mod camera;
 mod texture;
 mod compute_params;
 mod config;
+mod compute_step;
 
 use anyhow::Result;
 use winit::event_loop::{ControlFlow, EventLoop};
