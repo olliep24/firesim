@@ -615,7 +615,8 @@ impl State {
         if code == KeyCode::Escape && key_state.is_pressed() {
             event_loop.exit();
         } else if code == KeyCode::Space && key_state.is_pressed() {
-            self.pending_input = true;
+            self.compute_params.set_inject_sources_strength(1.0);
+            self.queue.write_buffer(&self.compute_params_buffer, 0, bytemuck::cast_slice(&[self.compute_params]));
         } else {
             self.camera_controller.process_keyboard(code, key_state);
         }
@@ -689,7 +690,11 @@ impl State {
             self.use_a_to_b = !self.use_a_to_b;
         }
 
-        // Remove forces if present.
+        if self.compute_params.inject_sources_strength() > 0.0 {
+            // If we added input, then
+            self.compute_params.set_inject_sources_strength(0.0);
+            self.queue.write_buffer(&self.compute_params_buffer, 0, bytemuck::cast_slice(&[self.compute_params]));
+        }
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

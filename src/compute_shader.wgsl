@@ -4,6 +4,7 @@ struct Params {
     width: u32,
     height: u32,
     depth: u32,
+    inject_sources_flag: u32,
     box_min: vec4<f32>,
     box_max: vec4<f32>,
     viewport: vec2<f32>,
@@ -24,6 +25,18 @@ var density_scalar_field_texture_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(4)
 var field_sampler: sampler;
 
+// Constants and structs for density and force source calculation.
+const center = vec3<f32>(32.0, 16.0, 32.0);
+const radius: f32 = 4.0;
+const radius2: f32 = radius * radius;
+const peak: f32 = 1.0;
+const strength: f32 = 1.0;
+const eps: f32 = 1e-6;
+struct DensityAndForce {
+    density: f32,
+    force: vec3<f32>,
+}
+
 @compute
 @workgroup_size(4, 4, 4)
 fn main (
@@ -36,6 +49,9 @@ fn main (
     }
 
     // Add sources to the scalar fields.
+    let density_and_forces = compute_sources(gid);
+    let density_source = density_and_forces.density;
+    let force_source = density_and_forces.force;
 
     advect_density(gid);
     advect_velocity(gid);
@@ -100,4 +116,38 @@ fn backtrace(uvw: vec3<f32>, velocity: vec3<f32>) -> vec3<f32> {
     // Velocity is in cells per second so convert to texture coordinates per second, which are in range of [0, 1]
     let vel_uvw = vec3<f32>(velocity.x / w, velocity.y / h, velocity.z / d);
     return uvw - params.dt * vel_uvw;
+}
+
+// Computes the density and force source at the given voxel. Adds a blob of density and forces to puff it out.
+// Will return a non-zero value when params.inject_source_flag is on.
+fn compute_sources(gid: vec3<u32>) -> DensityAndForce {
+    var output: DensityAndForce;
+    output.density = 0.0;
+    output.force = vec3<f32>(0.0);
+
+    if (params.inject_sources_flag == u0) {
+        return
+    }
+
+    let coord = vec3<i32>(gid);
+
+    let position = vec3<f32>(gid) + vec3<f32>(0.5);
+    let distance_from_center = position - center;
+    let distance_from_center2 = dot(distance_from_center, distance_from_center);
+
+    // Position is too far from center, no source.
+    if (distance_from_center2 > radius2) {
+        return output;
+    }
+
+    let sigma = max(radius * 0.35, 1e-6);
+    let sigma2 = sigma * sigma;
+    let density_to_add = peak * exp(-distance_from_center2 / (2.0 * sigma2));
+    output.density = density_to_add;
+
+    let dir = distance_from_center / max(sqrt(distance_from_center2), eps); // normalized
+    let force = dir * (strength * add);
+    output.force = force;
+
+    return output;
 }
