@@ -13,7 +13,10 @@ use crate::config::{GRID_DIMENSION_LENGTH, GRID_VOXEL_SIDE_LENGTH};
 
 /**
 Each channel (RBGA) in the texture will be a 16-bit float.
+The 16-bit float channel is filterable (needed for interpolation) but the 32-bit float channel
+is not.
 TODO: My current machine allows this will the texture usages I need, but add check for this.
+TODO: Make just one format.
 */
 const VECTOR_FIELD_CHANNEL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const SCALAR_FIELD_CHANNEL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -40,9 +43,9 @@ pub struct State {
     use_a_to_b: bool,
     compute_bind_group_a_to_b: wgpu::BindGroup,
     compute_bind_group_b_to_a: wgpu::BindGroup,
-    add_input_pipeline: wgpu::ComputePipeline,
-    add_input_bind_group_a: wgpu::BindGroup,
-    add_input_bind_group_b: wgpu::BindGroup,
+    add_source_pipeline: wgpu::ComputePipeline,
+    remove_source_pipeline: wgpu::ComputePipeline,
+    source_bind_group: wgpu::BindGroup,
     pending_input: bool,
     pub mouse_pressed: bool,
     pub window: Arc<Window>,
@@ -222,7 +225,7 @@ impl State {
                     },
                     count: None,
                 },
-                // 2. Density scalar field texture input
+                // 2. Force source texture input.
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
@@ -233,9 +236,20 @@ impl State {
                     },
                     count: None,
                 },
-                // 3. Density scalar field texture output
+                // 3. Density scalar field texture input
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // 4. Density scalar field texture output
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
@@ -244,9 +258,20 @@ impl State {
                     },
                     count: None,
                 },
-                // 4. Sampler for density texture
+                // 5. Density source texture input.
                 wgpu::BindGroupLayoutEntry {
-                    binding: 4,
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // 6. Sampler for density texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
@@ -267,8 +292,11 @@ impl State {
             Some("Velocity Field Texture")
         );
 
-        // Set static velocity field.
-        velocity_vector_field_texture_a.write_velocity_3d_rgba16f_tornado(&queue);
+        let force_source_texture = Texture::create_compute_texture(
+            &device,
+            VECTOR_FIELD_CHANNEL_FORMAT,
+            Some("Force Source Texture")
+        );
 
         let density_scalar_field_texture_a = Texture::create_compute_texture(
             &device,
@@ -282,11 +310,10 @@ impl State {
             Some("Density Scalar Field Texture B")
         );
 
-        density_scalar_field_texture_a.write_density_blob_rgba16f(
-            &queue,
-            [16.0, 16.0, 16.0],
-            4.0,
-            1.0
+        let density_source_texture = Texture::create_compute_texture(
+            &device,
+            SCALAR_FIELD_CHANNEL_FORMAT,
+            Some("Density Source Texture")
         );
 
         // Create two bind groups to ping pong between, controlled by use_a_to_b flag.
@@ -304,19 +331,29 @@ impl State {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(&velocity_vector_field_texture_b.view)
                 },
-                // binding 2: Density scalar field read
+                // binding 2: Force source vector field read
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
+                    resource: wgpu::BindingResource::TextureView(&force_source_texture.view)
                 },
-                // binding 3: Density scalar field write
+                // binding 3: Density scalar field read
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
                 },
-                // binding 4: Sampler. Will work for scalar or velocity field.
+                // binding 4: Density scalar field write
                 wgpu::BindGroupEntry {
                     binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
+                },
+                // binding 5: Density source scalar field read
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&density_source_texture.view)
+                },
+                // binding 6: Sampler. Will work for scalar or velocity field.
+                wgpu::BindGroupEntry {
+                    binding: 6,
                     resource: wgpu::BindingResource::Sampler(&density_scalar_field_texture_a.sampler)
                 },
             ],
@@ -336,19 +373,29 @@ impl State {
                     binding: 1,
                     resource: wgpu::BindingResource::TextureView(&velocity_vector_field_texture_a.view)
                 },
-                // binding 2: Density scalar field read
+                // binding 2: Force source vector field read
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
+                    resource: wgpu::BindingResource::TextureView(&force_source_texture.view)
                 },
-                // binding 3: Density scalar field write
+                // binding 3: Density scalar field read
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
                 },
-                // binding 4: Sampler. Will work for scalar or velocity field.
+                // binding 4: Density scalar field write
                 wgpu::BindGroupEntry {
                     binding: 4,
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
+                },
+                // binding 5: Density source scalar field read
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(&density_source_texture.view)
+                },
+                // binding 6: Sampler. Will work for scalar or velocity field.
+                wgpu::BindGroupEntry {
+                    binding: 6,
                     resource: wgpu::BindingResource::Sampler(&density_scalar_field_texture_a.sampler)
                 },
             ],
@@ -470,27 +517,27 @@ impl State {
             cache: None,
         });
 
-        let add_input_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Add Input Bind Group Layout"),
+        let source_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Source Bind Group Layout"),
             entries: &[
-                // velocity storage texture
+                // Force source texture write.
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::ReadWrite,
-                        format: wgpu::TextureFormat::Rgba16Float,
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: SCALAR_FIELD_CHANNEL_FORMAT,
                         view_dimension: wgpu::TextureViewDimension::D3,
                     },
                     count: None,
                 },
-                // density storage texture
+                // Density source texture write.
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::ReadWrite,
-                        format: wgpu::TextureFormat::Rgba16Float,
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: SCALAR_FIELD_CHANNEL_FORMAT,
                         view_dimension: wgpu::TextureViewDimension::D3,
                     },
                     count: None,
@@ -498,53 +545,56 @@ impl State {
             ]
         });
 
-        let add_input_bind_group_a = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Add Input Bind Group"),
-            layout: &add_input_bind_group_layout,
+        let source_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Source Bind Group"),
+            layout: &source_bind_group_layout,
             entries: &[
                 // binding 0: Velocity vector field a
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&velocity_vector_field_texture_a.view)
+                    resource: wgpu::BindingResource::TextureView(&force_source_texture.view)
                 },
                 // binding 1: Density scalar field a
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
+                    resource: wgpu::BindingResource::TextureView(&density_source_texture.view)
                 },
             ],
         });
 
-        let add_input_bind_group_b = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Add Input Bind Group"),
-            layout: &add_input_bind_group_layout,
-            entries: &[
-                // binding 0: Velocity vector field b
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&velocity_vector_field_texture_b.view)
-                },
-                // binding 1: Density scalar field b
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
-                },
-            ],
-        });
-
-        let add_input_pipeline_layout =
+        let source_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Add Input Pipeline Layout"),
+                label: Some("Source Pipeline Layout"),
                 bind_group_layouts: &[
-                    &add_input_bind_group_layout,
+                    &source_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
 
-        let add_input_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Add Input Pipeline"),
-            layout: Some(&add_input_pipeline_layout),
-            module: &compute_shader,
+        let add_source_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Add Source Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("add_source.wgsl").into()),
+        });
+
+        let add_source_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Source Pipeline"),
+            layout: Some(&source_pipeline_layout),
+            module: &add_source_shader,
+            // Will default to @compute
+            entry_point: None,
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
+
+        let remove_source_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Remove Source Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("remove_source.wgsl").into()),
+        });
+
+        let remove_source_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Source Pipeline"),
+            layout: Some(&source_pipeline_layout),
+            module: &remove_source_shader,
             // Will default to @compute
             entry_point: None,
             compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -573,9 +623,9 @@ impl State {
             use_a_to_b: true,
             compute_bind_group_a_to_b,
             compute_bind_group_b_to_a,
-            add_input_pipeline,
-            add_input_bind_group_a,
-            add_input_bind_group_b,
+            add_source_pipeline,
+            remove_source_pipeline,
+            source_bind_group,
             pending_input: false,
             mouse_pressed: false,
             window,
@@ -614,7 +664,7 @@ impl State {
     pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, key_state: ElementState) {
         if code == KeyCode::Escape && key_state.is_pressed() {
             event_loop.exit();
-        } else if code == KeyCode::Space && key_state.is_pressed() {
+        } else if code == KeyCode::KeyF && key_state.is_pressed() {
             self.pending_input = true;
         } else {
             self.camera_controller.process_keyboard(code, key_state);
@@ -639,19 +689,13 @@ impl State {
             label: Some("Render Encoder"),
         });
 
-        // Add sources to density and forces if present.
+        // Add sources to density and force if present.
         if self.pending_input {
             {
                 let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-                compute_pass.set_pipeline(&self.add_input_pipeline);
+                compute_pass.set_pipeline(&self.add_source_pipeline);
 
-                let bind_group = if self.use_a_to_b {
-                    &self.add_input_bind_group_a
-                } else {
-                    &self.add_input_bind_group_b
-                };
-
-                compute_pass.set_bind_group(0, bind_group, &[]);
+                compute_pass.set_bind_group(0, &self.source_bind_group, &[]);
 
                 // We specified 4 threads per dimension in the compute shader.
                 let num_dispatches_per_dimension = GRID_DIMENSION_LENGTH / 4;
@@ -661,8 +705,6 @@ impl State {
                     num_dispatches_per_dimension
                 );
             }
-
-            self.pending_input = false;
         }
 
         // Simulate
@@ -690,6 +732,25 @@ impl State {
         }
 
         // Remove forces if present.
+        if self.pending_input {
+            {
+                let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+                compute_pass.set_pipeline(&self.remove_source_pipeline);
+
+                compute_pass.set_bind_group(0, &self.source_bind_group, &[]);
+
+                // We specified 4 threads per dimension in the compute shader.
+                let num_dispatches_per_dimension = GRID_DIMENSION_LENGTH / 4;
+                compute_pass.dispatch_workgroups(
+                    num_dispatches_per_dimension,
+                    num_dispatches_per_dimension,
+                    num_dispatches_per_dimension
+                );
+            }
+
+            // We are done adding the sources.
+            self.pending_input = false;
+        }
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

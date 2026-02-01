@@ -1,7 +1,7 @@
 @group(0) @binding(0)
-var force_sources: texture_storage_3d<rgba16float, write>;
+var force_source: texture_storage_3d<rgba16float, write>;
 @group(0) @binding(1)
-var density_sources: texture_storage_3d<rgba16float, write>;
+var density_source: texture_storage_3d<rgba16float, write>;
 
 // Location to add dye density and velocity.
 // TODO: Maybe add configuration params as input. Maybe through command line?
@@ -31,9 +31,10 @@ fn main (
     let sigma2 = sigma * sigma;
     let density_to_add = peak * exp(-distance_from_center2 / (2.0 * sigma2));
 
+    // TODO: consider changing to rate per second, then multiply by dt.
     // Add the dye
     textureStore(
-        density_sources,
+        density_source,
         coord,
         vec4<f32>(density_to_add, 0.0, 0.0, 0.0)
     );
@@ -42,7 +43,7 @@ fn main (
 //    let dir = distance_from_center / max(sqrt(distance_from_center2), eps); // normalized
 //    let force = dir * (strength * add);
 //    textureStore(
-//        force_sources,
+//        force_source,
 //        coord,
 //        vec4<f32>(force, 0.0)
 //    );

@@ -1,5 +1,5 @@
 use half::f16;
-use crate::config::{GRID_DIMENSIONS, GRID_DIMENSION_LENGTH, VELOCITY_SCALE};
+use crate::config::{GRID_DIMENSIONS, GRID_DIMENSION_LENGTH, _VELOCITY_SCALE};
 
 pub struct Texture {
     #[allow(unused)]
@@ -100,7 +100,7 @@ impl Texture {
     /// Writes a tornado velocity vector field to the given texture with a rgba16f format.
     /// The velocity's x, y, and z components will be written to the texture's r, g, and b channels
     /// respectively.
-    pub fn write_velocity_3d_rgba16f_tornado(
+    pub fn _write_velocity_3d_rgba16f_tornado(
         &self,
         queue: &wgpu::Queue
     ) {
@@ -139,7 +139,7 @@ impl Texture {
                         (0.0, 0.0, 0.0)
                     } else {
                         let inv_r = 1.0 / r2.sqrt();
-                        (pz * inv_r * VELOCITY_SCALE, 0.0, -px * inv_r * VELOCITY_SCALE)
+                        (pz * inv_r * _VELOCITY_SCALE, 0.0, -px * inv_r * _VELOCITY_SCALE)
                     };
 
                     let r16 = f16::from_f32(vx).to_bits();
@@ -281,7 +281,7 @@ impl Texture {
 
     /// Write a smooth density blob into the entire 3D RGBA16F texture.
     /// This overwrites the whole texture (good for init / reset).
-    pub fn write_density_blob_rgba16f(
+    pub fn _write_density_blob_rgba16f(
         &self,
         queue: &wgpu::Queue,
         center: [f32; 3],

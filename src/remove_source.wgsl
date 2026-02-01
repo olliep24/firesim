@@ -1,7 +1,7 @@
 @group(0) @binding(0)
-var force_sources: texture_storage_3d<rgba16float, write>;
+var force_source: texture_storage_3d<rgba16float, write>;
 @group(0) @binding(1)
-var density_sources: texture_storage_3d<rgba16float, write>;
+var density_source: texture_storage_3d<rgba16float, write>;
 
 const zero = vec4<f32>(0.0);
 
@@ -12,13 +12,13 @@ fn main (
 ) {
     // Zero out sources after we added them to the simulation.
     textureStore(
-        force_sources,
+        force_source,
         vec3<i32>(gid),
         zero
     );
 
     textureStore(
-        density_sources,
+        density_source,
         vec3<i32>(gid),
         zero
     );

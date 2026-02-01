@@ -18,10 +18,14 @@ var velocity_field_texture_read: texture_3d<f32>;
 @group(1) @binding(1)
 var velocity_feild_texture_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
-var density_scalar_field_texture_read: texture_3d<f32>;
+var force_source: texture_3d<f32>;
 @group(1) @binding(3)
-var density_scalar_field_texture_write: texture_storage_3d<rgba16float, write>;
+var density_scalar_field_texture_read: texture_3d<f32>;
 @group(1) @binding(4)
+var density_scalar_field_texture_write: texture_storage_3d<rgba16float, write>;
+@group(1) @binding(5)
+var density_source: texture_3d<f32>;
+@group(1) @binding(6)
 var field_sampler: sampler;
 
 @compute
@@ -56,11 +60,13 @@ fn advect_density(gid: vec3<u32>) {
     let uvw_back = backtrace(uvw, vel);
 
     let backtraced_density = textureSampleLevel(density_scalar_field_texture_read, field_sampler, uvw_back, 0.0).x;
+    let backtraced_density_source = textureSampleLevel(density_source, field_sampler, uvw_back, 0.0).x;
+    let total_backtraced_density = backtraced_density + backtraced_density_source;
 
     textureStore(
         density_scalar_field_texture_write,
         vec3<i32>(gid),
-        vec4<f32>(backtraced_density, 0.0, 0.0, 0.0)
+        vec4<f32>(total_backtraced_density, 0.0, 0.0, 0.0)
     );
 }
 
