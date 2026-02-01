@@ -40,6 +40,10 @@ pub struct State {
     use_a_to_b: bool,
     compute_bind_group_a_to_b: wgpu::BindGroup,
     compute_bind_group_b_to_a: wgpu::BindGroup,
+    add_input_pipeline: wgpu::ComputePipeline,
+    add_input_bind_group_a: wgpu::BindGroup,
+    add_input_bind_group_b: wgpu::BindGroup,
+    pending_input: bool,
     pub mouse_pressed: bool,
     pub window: Arc<Window>,
 }
@@ -466,6 +470,87 @@ impl State {
             cache: None,
         });
 
+        let add_input_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Add Input Bind Group Layout"),
+            entries: &[
+                // velocity storage texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::ReadWrite,
+                        format: wgpu::TextureFormat::Rgba16Float,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                    },
+                    count: None,
+                },
+                // density storage texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::ReadWrite,
+                        format: wgpu::TextureFormat::Rgba16Float,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                    },
+                    count: None,
+                },
+            ]
+        });
+
+        let add_input_bind_group_a = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Add Input Bind Group"),
+            layout: &add_input_bind_group_layout,
+            entries: &[
+                // binding 0: Velocity vector field a
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&velocity_vector_field_texture_a.view)
+                },
+                // binding 1: Density scalar field a
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_a.view)
+                },
+            ],
+        });
+
+        let add_input_bind_group_b = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Add Input Bind Group"),
+            layout: &add_input_bind_group_layout,
+            entries: &[
+                // binding 0: Velocity vector field b
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&velocity_vector_field_texture_b.view)
+                },
+                // binding 1: Density scalar field b
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&density_scalar_field_texture_b.view)
+                },
+            ],
+        });
+
+        let add_input_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Add Input Pipeline Layout"),
+                bind_group_layouts: &[
+                    &add_input_bind_group_layout,
+                ],
+                push_constant_ranges: &[],
+            });
+
+        let add_input_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Add Input Pipeline"),
+            layout: Some(&add_input_pipeline_layout),
+            module: &compute_shader,
+            // Will default to @compute
+            entry_point: None,
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
+
         Ok(Self {
             surface,
             device,
@@ -488,6 +573,10 @@ impl State {
             use_a_to_b: true,
             compute_bind_group_a_to_b,
             compute_bind_group_b_to_a,
+            add_input_pipeline,
+            add_input_bind_group_a,
+            add_input_bind_group_b,
+            pending_input: false,
             mouse_pressed: false,
             window,
         })
@@ -516,6 +605,7 @@ impl State {
         can do some speed optimizations, which it couldn't if we could access the buffer via
         the CPU.
          */
+        // TODO: Make this a fixed timestep.
         self.compute_params.update_dt(dt);
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
         self.queue.write_buffer(&self.compute_params_buffer, 0, bytemuck::cast_slice(&[self.compute_params]));
@@ -524,6 +614,8 @@ impl State {
     pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, key_state: ElementState) {
         if code == KeyCode::Escape && key_state.is_pressed() {
             event_loop.exit();
+        } else if code == KeyCode::Space && key_state.is_pressed() {
+            self.pending_input = true;
         } else {
             self.camera_controller.process_keyboard(code, key_state);
         }
@@ -547,8 +639,34 @@ impl State {
             label: Some("Render Encoder"),
         });
 
+        // Add sources to density and forces if present.
+        if self.pending_input {
+            {
+                let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+                compute_pass.set_pipeline(&self.add_input_pipeline);
+
+                let bind_group = if self.use_a_to_b {
+                    &self.add_input_bind_group_a
+                } else {
+                    &self.add_input_bind_group_b
+                };
+
+                compute_pass.set_bind_group(0, bind_group, &[]);
+
+                // We specified 4 threads per dimension in the compute shader.
+                let num_dispatches_per_dimension = GRID_DIMENSION_LENGTH / 4;
+                compute_pass.dispatch_workgroups(
+                    num_dispatches_per_dimension,
+                    num_dispatches_per_dimension,
+                    num_dispatches_per_dimension
+                );
+            }
+
+            self.pending_input = false;
+        }
+
+        // Simulate
         {
-            // TODO: Figure out number of dispatches and work groups.
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
             compute_pass.set_pipeline(&self.compute_pipeline);
 
@@ -570,6 +688,8 @@ impl State {
             // Ping pong between textures.
             self.use_a_to_b = !self.use_a_to_b;
         }
+
+        // Remove forces if present.
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -614,7 +734,6 @@ impl State {
             render_pass.draw(0..3, 0..1);
         }
 
-        // submit will accept anything that implements IntoIter
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
