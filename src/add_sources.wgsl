@@ -39,11 +39,11 @@ fn main (
     );
 
     // Add an outward puff of force. Has an x, y, and z component.
-    let dir = distance_from_center / max(sqrt(distance_from_center2), eps); // normalized
-    let force = dir * (strength * add);
-    textureStore(
-        force_sources,
-        coord,
-        vec4<f32>(force, 0.0)
-    );
+//    let dir = distance_from_center / max(sqrt(distance_from_center2), eps); // normalized
+//    let force = dir * (strength * add);
+//    textureStore(
+//        force_sources,
+//        coord,
+//        vec4<f32>(force, 0.0)
+//    );
 }

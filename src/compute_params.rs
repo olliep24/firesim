@@ -16,9 +16,6 @@ pub struct ComputeParams {
     height: u32,
     /// Number of voxels along the Z axis of the simulation grid.
     depth: u32,
-    /// Value to indicate how strong to inject sources (should be a value between 0 and 1.0).
-    /// Could be represented as a boolean, but minimizing branching on the GPU is ideal.
-    inject_sources_strength: f32,
     /// Minimum point in world space for the simulation grid.
     /// xyz + padding.
     box_min: [f32; 4],
@@ -37,7 +34,6 @@ impl ComputeParams {
             width: GRID_DIMENSION_LENGTH,
             height: GRID_DIMENSION_LENGTH,
             depth: GRID_DIMENSION_LENGTH,
-            inject_sources_strength: 0.0,
             box_min,
             box_max,
             viewport: [config.width as f32, config.height as f32],
@@ -51,13 +47,5 @@ impl ComputeParams {
 
     pub fn update_viewport(&mut self, config: &wgpu::SurfaceConfiguration) {
         self.viewport = [config.width as f32, config.height as f32];
-    }
-
-    pub fn set_inject_sources_strength(&mut self, strength: f32) {
-        self.inject_sources_strength = strength;
-    }
-
-    pub fn inject_sources_strength(&self) -> f32 {
-        self.inject_sources_strength
     }
 }
