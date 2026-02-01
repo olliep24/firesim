@@ -709,19 +709,96 @@ impl State {
             }
         }
 
+        /*
+        Ok, there is a common pattern here. On all steps, we are reading from a texture and writing
+        to it. This will require ping ponging. The source textures are technically all write rn, but
+        we keep them as read write so this follows everything. Additionally, all the steps read
+        from another texture from a previous step.
+
+        These are the textures:
+            Velocity texture (3D)
+            Force texture (3D)
+            Scalar (fuel, density, and temperature) texture (3D)
+            Scalar source texture (3D)
+            Pressure texture (1D).
+
+        Each step of algorithm below will need to have ping pong bind groups because we are reading
+        and writing to textures. The problem is that there will need to be many versions of the bind
+        groups for each shader step because some steps rely on the output of a texture in a previous
+        step.
+
+        For example, when I'm adding sources to the scalars say from a to b, I need to know which source
+        texture (a or b) has the most up-to-date source data. So I would need a total of 4 bind
+        groups for this compute shader:
+            scalar texture a -> scalar texture b. read from scalar source texture a.
+            scalar texture a -> scalar texture b. read from scalar source texture b.
+            scalar texture b -> scalar texture a. read from scalar source texture a.
+            scalar texture b -> scalar texture a. read from scalar source texture b.
+
+        This would be the same for the other steps. This is doable, but there are a lot of bind
+        groups to be made.
+
+        I can definitely write some helper struct to contain each algorithm step (compute pass).
+        All the bind groups will be created there by passing in the a and b versions of each
+        texture need for each step.
+
+        Each of these helper structs will contain the compute pipeline, bind group layout, and bind
+        groups. We can define a trait with a function that returns a bind group layout given the
+        ping pong state of the texture we want to read and write to AND an Option<PingPong> for the read
+        texture. The second parameter is an option because not all steps in the compute pipeline
+        need to read from a texture in the previous step.
+
+        To create this struct, we can pass in the name of the shader file and the textures that it needs.
+
+        We can have another helper struct called PingPong, which keeps track of the most up-to-date
+        texture. Each of the textures above would get their own ping pong struct to manage it's
+        state. We can then pass a reference of this struct into the helper struct for each compute
+        pass. The result will be the bind group needed for the compute pass.
+
+        After a compute step, we update the PingPong struct associated with teh texture that was
+        read and written to. The texture that we only read from should not update the PingPong state.
+         */
+
+        // Add scalar sources
+        // Reads and writes to scalar texture (ping-pong). Reads from scalar source.
+
         // Advect scalars
+        // Reads and writes to scalar texture (ping-pong). Reads from the velocity
 
         // Combustion reaction. Use fuel to create heat and smoke. Heat cooling as well.
+        // Reads and writes to scalar texture (ping-pong).
 
-        // Add forces from scalars (e.g. buoyancy from temperature).
+        // Add force from scalars to force source texture (e.g. buoyancy from temperature).
+        // Reads and writes to force source texture (ping-pong). Reads from scalar texture.
 
         /* Velocity Field Update */
 
         // Advect velocity
+        // Reads and writes to velocity texture (ping-pong).
+
+        // Diffusion (optional, will do later).
+        // Reads and writes to velocity texture (ping-pong).
 
         // Add forces
+        // Reads and writes to velocity texture (ping-pong). Reads from force source texture.
 
-        // Project
+        // Vorticity Confinement
+        // Reads and writes to velocity texture (ping-pong).
+
+        // Project - multistep
+        //
+        // Do k times (ping-pong k times) for jacobi iteration to compute the pressure:
+        //  Compute pressure gradient.
+        //  Reads and writes to pressure texture. Reads from velocity texture (divergence calculation)
+        //
+        // Subtract pressure gradient
+        // Reads and writes to velocity texture (ping-pong). Reads from pressure (need to calculate pressure gradient)
+
+        // Set boundary conditions for pressure.
+        // Reads and writes to pressure texture (ping-pong)
+
+        // Set boundary conditions for velocity.
+        // Reads and writes to velocity texture (ping-pong).
 
         // Simulate
         {
@@ -769,6 +846,7 @@ impl State {
         }
 
         /* Render simulation result */
+        // Reads from the scalar texture.
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
