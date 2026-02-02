@@ -53,8 +53,10 @@ pub struct State {
     scalar_field_ping_pong: PingPong,
     velocity_vector_field_ping_pong: PingPong,
     scalar_source_texture: Texture,
+    force_source_texture: Texture,
     advect_scalars_compute_step: ComputeStep,
     advect_velocity_compute_step: ComputeStep,
+    add_forces_to_velocity_compute_step: ComputeStep,
     pending_input: bool,
     pub mouse_pressed: bool,
     pub window: Arc<Window>,
@@ -425,6 +427,11 @@ impl State {
             &compute_params_bind_group_layout
         );
 
+        let add_forces_to_velocity_compute_step = create_add_forces_to_velocity_compute_step(
+            &device,
+            &compute_params_bind_group_layout
+        );
+
         Ok(Self {
             surface,
             device,
@@ -449,8 +456,10 @@ impl State {
             scalar_field_ping_pong,
             velocity_vector_field_ping_pong,
             scalar_source_texture,
+            force_source_texture,
             advect_scalars_compute_step,
             advect_velocity_compute_step,
+            add_forces_to_velocity_compute_step,
             pending_input: false,
             mouse_pressed: false,
             window,
@@ -563,6 +572,23 @@ impl State {
             write_texture,
             &[],
             Some(self.velocity_vector_field_ping_pong.get_sampler()),
+            WORKGROUPS
+        );
+
+        self.velocity_vector_field_ping_pong.swap();
+
+        // Add forces to velocity
+        let (read_texture, write_texture) = self.velocity_vector_field_ping_pong.get_read_and_write();
+        let textures_read_only: [&wgpu::TextureView; 1] = [&self.force_source_texture.view];
+
+        self.add_forces_to_velocity_compute_step.dispatch(
+            &self.device,
+            &mut encoder,
+            &self.compute_params_bind_group,
+            read_texture,
+            write_texture,
+            &textures_read_only,
+            None,
             WORKGROUPS
         );
 
@@ -815,5 +841,77 @@ fn create_advect_velocity_compute_step(device: &Device, compute_params_bind_grou
         "Advect Velocity Compute Step",
         advect_velocity_pipeline,
         advect_velocity_bind_group_layout,
+    )
+}
+
+fn create_add_forces_to_velocity_compute_step(device: &Device, compute_params_bind_group_layout: &wgpu::BindGroupLayout) -> ComputeStep {
+    let add_forces_to_velocity_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Add Forces to Velocity Bind Group Layout"),
+        entries: &[
+            // 0. Velocity vector field texture read.
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D3,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            },
+            // 1. Vector velocity field texture write.
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::WriteOnly,
+                    format: SCALAR_FIELD_CHANNEL_FORMAT,
+                    view_dimension: wgpu::TextureViewDimension::D3,
+                },
+                count: None,
+            },
+            // 2. Force source texture read.
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D3,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            },
+        ]
+    });
+
+    let add_forces_to_velocity_pipeline_layout =
+        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Add Forces to Velocity Pipeline Layout"),
+            bind_group_layouts: &[
+                compute_params_bind_group_layout,
+                &add_forces_to_velocity_bind_group_layout,
+            ],
+            push_constant_ranges: &[],
+        });
+
+    let add_forces_to_velocity_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Add Forces to Velocity Shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("add_forces_to_velocity.wgsl").into()),
+    });
+
+    let add_forces_to_velocity_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("Add Forces to Velocity Pipeline"),
+        layout: Some(&add_forces_to_velocity_pipeline_layout),
+        module: &add_forces_to_velocity_shader,
+        // Will default to @compute
+        entry_point: None,
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    });
+
+    ComputeStep::new(
+        "Add Forces to Velocity Compute Step",
+        add_forces_to_velocity_pipeline,
+        add_forces_to_velocity_bind_group_layout,
     )
 }

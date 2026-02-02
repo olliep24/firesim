@@ -45,6 +45,6 @@ fn main (
     textureStore(
         force_source,
         coord,
-        vec4<f32>(0.2, 0.0, 0.0, 0.0)
+        vec4<f32>(force, 0.0)
     );
 }
