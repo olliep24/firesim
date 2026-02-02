@@ -5,6 +5,7 @@ mod texture;
 mod compute_params;
 mod config;
 mod compute_step;
+mod ping_pong;
 
 use anyhow::Result;
 use winit::event_loop::{ControlFlow, EventLoop};

@@ -14,11 +14,11 @@ var<uniform> params: Params;
 
 // Texture bindings
 @group(1) @binding(0)
-var velocity_field_texture: texture_3d<f32>;
-@group(1) @binding(1)
 var density_scalar_field_texture_read: texture_3d<f32>;
-@group(1) @binding(2)
+@group(1) @binding(1)
 var density_scalar_field_texture_write: texture_storage_3d<rgba16float, write>;
+@group(1) @binding(2)
+var velocity_field_texture: texture_3d<f32>;
 @group(1) @binding(3)
 var density_source: texture_3d<f32>;
 @group(1) @binding(4)

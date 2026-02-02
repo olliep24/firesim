@@ -5,14 +5,16 @@
 /// through ping-ponging. Each step can also take in a varying number of read only textures.
 ///
 /// The bind group that this struct owns will be set at bind group 1.
-struct ComputeStep {
+pub struct ComputeStep {
+    label: &'static str,
     compute_pipeline: wgpu::ComputePipeline,
     bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl ComputeStep {
-    pub fn new(compute_pipeline: wgpu::ComputePipeline, bind_group_layout: wgpu::BindGroupLayout) -> Self {
+    pub fn new(label: &'static str, compute_pipeline: wgpu::ComputePipeline, bind_group_layout: wgpu::BindGroupLayout) -> Self {
         Self {
+            label,
             compute_pipeline,
             bind_group_layout,
         }
@@ -27,14 +29,14 @@ impl ComputeStep {
     ///
     /// The bind group layout created on this struct's creation needs to have the layout that will
     /// be binded base on this functions input.
-    fn dispatch(
+    pub fn dispatch(
         &self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        uniforms_bg: &wgpu::BindGroup,      // group(0)
-        texture_read: &wgpu::TextureView,    // input (same field)
-        texture_write: &wgpu::TextureView,    // output
-        textures_read_only: &[&wgpu::TextureView],  // other inputs
+        compute_params_bind_group: &wgpu::BindGroup,
+        texture_read: &wgpu::TextureView,
+        texture_write: &wgpu::TextureView,
+        textures_read_only: &[&wgpu::TextureView],
         sampler: Option<&wgpu::Sampler>,
         workgroups: (u32, u32, u32),
     ) {
@@ -65,14 +67,14 @@ impl ComputeStep {
         }
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
+            label: Some(self.label),
             layout: &self.bind_group_layout,
             entries: &entries,
         });
 
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
         pass.set_pipeline(&self.compute_pipeline);
-        pass.set_bind_group(0, uniforms_bg, &[]);
+        pass.set_bind_group(0, compute_params_bind_group, &[]);
         pass.set_bind_group(1, &bind_group, &[]);
         pass.dispatch_workgroups(workgroups.0, workgroups.1, workgroups.2);
     }
