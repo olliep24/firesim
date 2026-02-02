@@ -44,11 +44,9 @@ pub struct State {
     camera_bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
     density_texture_bind_group_layout: wgpu::BindGroupLayout,
-    compute_pipeline: wgpu::ComputePipeline,
     compute_params: ComputeParams,
     compute_params_bind_group: wgpu::BindGroup,
     compute_params_buffer: wgpu::Buffer,
-    use_a_to_b: bool,
     add_source_pipeline: wgpu::ComputePipeline,
     remove_source_pipeline: wgpu::ComputePipeline,
     source_bind_group: wgpu::BindGroup,
@@ -167,11 +165,6 @@ impl State {
         let extent = GRID_DIMENSION_LENGTH as f32 * GRID_VOXEL_SIDE_LENGTH;
         let box_max = [extent, extent, extent, 0.0];
 
-        let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Compute Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("compute_shader.wgsl").into()),
-        });
-
         let compute_params = ComputeParams::new(box_min, box_max, &config);
 
         let compute_params_buffer = device.create_buffer_init(
@@ -209,85 +202,6 @@ impl State {
                     resource: compute_params_buffer.as_entire_binding(),
                 },
             ],
-        });
-
-        let compute_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Compute Pipeline Bind Group Layout"),
-            entries: &[
-                // 0. Velocity vector field texture read.
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // 1. Velocity vector field texture write.
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: SCALAR_FIELD_CHANNEL_FORMAT,
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                    },
-                    count: None,
-                },
-                // 2. Force source texture input.
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // 3. Density scalar field texture input
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // 4. Density scalar field texture output
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: SCALAR_FIELD_CHANNEL_FORMAT,
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                    },
-                    count: None,
-                },
-                // 5. Density source texture input.
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    },
-                    count: None,
-                },
-                // 6. Sampler for density texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 6,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                }
-            ]
         });
 
         // TODO: Add note on why we're using a texture here instead of a buffer.
@@ -336,26 +250,6 @@ impl State {
             VECTOR_FIELD_CHANNEL_FORMAT,
             Some("Force Source Texture")
         );
-
-        let compute_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Compute Pipeline Layout"),
-                bind_group_layouts: &[
-                    &compute_params_bind_group_layout,
-                    &compute_bind_group_layout,
-                ],
-                push_constant_ranges: &[],
-            });
-
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Compute Pipeline"),
-            layout: Some(&compute_pipeline_layout),
-            module: &compute_shader,
-            // Will default to @compute
-            entry_point: None,
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        });
 
         let density_texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Density Texture Bind Group Layout"),
@@ -546,11 +440,9 @@ impl State {
             camera_bind_group,
             render_pipeline,
             density_texture_bind_group_layout,
-            compute_pipeline,
             compute_params,
             compute_params_bind_group,
             compute_params_buffer,
-            use_a_to_b: true,
             add_source_pipeline,
             remove_source_pipeline,
             source_bind_group,
