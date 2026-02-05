@@ -31,6 +31,7 @@ fn main (
     }
 
     // skip outer boundary cells
+    // TODO: Revisit boundary conditions
     if (
         gid.x == 0u || gid.x >= params.width  - 1u ||
         gid.y == 0u || gid.y >= params.height - 1u ||
@@ -40,6 +41,11 @@ fn main (
     }
 
     let divergence = get_divergence(gid);
+    textureStore(
+        divergence,
+        vec3<i32>(gid),
+        vec4<f32>(divergence, 0.0, 0.0, 0.0)
+    );
 }
 
 // Returns the center of the voxel indexed at gid.
