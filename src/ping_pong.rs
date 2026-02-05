@@ -30,7 +30,7 @@ impl PingPong {
             // If we were to read from a and write to b, then a has the most up-to-date data.
             &self.texture_a.view
         } else {
-            // If we were to read from b and write to a, then a has the most up-to-date data.
+            // If we were to read from b and write to a, then b has the most up-to-date data.
             &self.texture_b.view
         };
 

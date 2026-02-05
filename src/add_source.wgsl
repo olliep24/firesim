@@ -9,8 +9,9 @@ const center = vec3<f32>(32.0, 16.0, 32.0);
 const radius: f32 = 4.0;
 const radius2: f32 = radius * radius;
 const peak: f32 = 1.0;
-const strength: f32 = 1.0;
+const strength: f32 = 10.0;
 const eps: f32 = 1e-6;
+const up = vec4<f32>(0.0, 1.0, 0.0, 0.0);
 
 /* Adds sources to the density texture and the force texture. Will overwrite entire texture */
 @compute
@@ -46,5 +47,38 @@ fn main (
         force_source,
         coord,
         vec4<f32>(force, 0.0)
+    );
+}
+
+fn add_density_blob(gid: vec3<u32>) {
+    let coord = vec3<i32>(gid);
+
+    let position = vec3<f32>(gid) + vec3<f32>(0.5);
+    let distance_from_center = position - center;
+    let distance_from_center2 = dot(distance_from_center, distance_from_center);
+
+    // Position is too far from center, pass.
+    if (distance_from_center2 > radius2) { return; }
+
+    let sigma = max(radius * 0.35, 1e-6);
+    let sigma2 = sigma * sigma;
+    let density_to_add = peak * exp(-distance_from_center2 / (2.0 * sigma2));
+
+    // TODO: consider changing to rate per second, then multiply by dt.
+    // Add the dye
+    textureStore(
+        density_source,
+        coord,
+        vec4<f32>(density_to_add, 0.0, 0.0, 0.0)
+    );
+}
+
+fn add_force_up(gid: vec3<u32>) {
+    let coord = vec3<i32>(gid);
+
+    textureStore(
+        force_source,
+        coord,
+        up,
     );
 }

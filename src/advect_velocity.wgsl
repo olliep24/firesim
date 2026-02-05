@@ -37,7 +37,7 @@ fn main (
 fn advect_velocity(gid: vec3<u32>) {
     let uvw = voxel_center_uvw(gid);
     let vel = textureSampleLevel(velocity_vector_field_texture_read, field_sampler, uvw, 0.0).xyz;
-    let uvw_back = backtrace(uvw, vel);
+    let uvw_back = clamp(backtrace(uvw, vel), vec3<f32>(0.0), vec3<f32>(1.0));
 
     // store velocity in RGB (A unused)
     let backtraced_velocity = textureSampleLevel(velocity_vector_field_texture_read, field_sampler, uvw_back, 0.0).xyz;

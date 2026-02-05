@@ -30,7 +30,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let vel = textureLoad(velocity_vector_field_texture_read, coord, 0).xyz;
     let force = textureLoad(force_source_read, coord, 0).xyz; // use xyz
 
-    let vel_out = vel + params.dt * force;
+    let vel_out = vel + force;
 
     textureStore(velocity_vector_field_texture_write, coord, vec4<f32>(vel_out, 0.0));
 }
