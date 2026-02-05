@@ -14,9 +14,9 @@ var<uniform> params: Params;
 
 // Texture bindings
 @group(1) @binding(0)
-var velocity_vector_field_texture_read: texture_3d<f32>;
+var velocity_vector_field_read: texture_3d<f32>;
 @group(1) @binding(1)
-var velocity_vector_field_texture_write: texture_storage_3d<rgba16float, write>;
+var velocity_vector_field_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
 var field_sampler: sampler;
 
@@ -36,14 +36,14 @@ fn main (
 
 fn advect_velocity(gid: vec3<u32>) {
     let uvw = voxel_center_uvw(gid);
-    let vel = textureSampleLevel(velocity_vector_field_texture_read, field_sampler, uvw, 0.0).xyz;
+    let vel = textureSampleLevel(velocity_vector_field_read, field_sampler, uvw, 0.0).xyz;
     let uvw_back = clamp(backtrace(uvw, vel), vec3<f32>(0.0), vec3<f32>(1.0));
 
     // store velocity in RGB (A unused)
-    let backtraced_velocity = textureSampleLevel(velocity_vector_field_texture_read, field_sampler, uvw_back, 0.0).xyz;
+    let backtraced_velocity = textureSampleLevel(velocity_vector_field_read, field_sampler, uvw_back, 0.0).xyz;
 
     textureStore(
-        velocity_vector_field_texture_write,
+        velocity_vector_field_write,
         vec3<i32>(gid),
         vec4<f32>(backtraced_velocity, 0.0)
     );

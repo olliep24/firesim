@@ -14,9 +14,9 @@ var<uniform> params: Params;
 
 // Texture bindings
 @group(1) @binding(0)
-var velocity_vector_field_texture_read: texture_3d<f32>;
+var velocity_vector_field_read: texture_3d<f32>;
 @group(1) @binding(1)
-var velocity_vector_field_texture_write: texture_storage_3d<rgba16float, write>;
+var velocity_vector_field_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
 var force_source_read: texture_3d<f32>;
 
@@ -27,10 +27,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     let coord = vec3<i32>(gid);
 
-    let vel = textureLoad(velocity_vector_field_texture_read, coord, 0).xyz;
+    let vel = textureLoad(velocity_vector_field_read, coord, 0).xyz;
     let force = textureLoad(force_source_read, coord, 0).xyz; // use xyz
 
     let vel_out = vel + force;
 
-    textureStore(velocity_vector_field_texture_write, coord, vec4<f32>(vel_out, 0.0));
+    textureStore(velocity_vector_field_write, coord, vec4<f32>(vel_out, 0.0));
 }

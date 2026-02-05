@@ -14,9 +14,9 @@ var<uniform> params: Params;
 
 // Texture bindings
 @group(1) @binding(0)
-var scalar_field_texture_read: texture_3d<f32>;
+var scalar_field_read: texture_3d<f32>;
 @group(1) @binding(1)
-var scalar_field_texture_write: texture_storage_3d<rgba16float, write>;
+var scalar_field_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
 var velocity_vector_field_texture: texture_3d<f32>;
 @group(1) @binding(3)
@@ -43,12 +43,12 @@ fn advect_density(gid: vec3<u32>) {
     let vel = textureSampleLevel(velocity_vector_field_texture, field_sampler, uvw, 0.0).xyz;
     let uvw_back = clamp(backtrace(uvw, vel), vec3<f32>(0.0), vec3<f32>(1.0));
 
-    let backtraced_density = textureSampleLevel(scalar_field_texture_read, field_sampler, uvw_back, 0.0).x;
+    let backtraced_density = textureSampleLevel(scalar_field_read, field_sampler, uvw_back, 0.0).x;
     let backtraced_density_source = textureSampleLevel(density_source, field_sampler, uvw_back, 0.0).x;
     let total_backtraced_density = backtraced_density + backtraced_density_source;
 
     textureStore(
-        scalar_field_texture_write,
+        scalar_field_write,
         vec3<i32>(gid),
         vec4<f32>(total_backtraced_density, 0.0, 0.0, 0.0)
     );

@@ -594,6 +594,8 @@ impl State {
 
         self.velocity_vector_field_ping_pong.swap();
 
+        // 
+
         /* Remove Sources if Present */
 
         if self.pending_input {

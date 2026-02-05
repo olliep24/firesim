@@ -45,7 +45,7 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> @builtin(position) vec4<f32> {
 
 // Texture bindings
 @group(2) @binding(0)
-var density_scalar_field_texture: texture_3d<f32>;
+var density_scalar_field: texture_3d<f32>;
 @group(2) @binding(1)
 var field_sampler: sampler;
 
@@ -92,7 +92,7 @@ fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec
         let p = ro + rd * (t + 0.5 * ds);
 
         let uvw = (p - bmin) / (bmax - bmin); // should be 0..1 in-box
-        let d = textureSampleLevel(density_scalar_field_texture, field_sampler, uvw, 0.0).x;
+        let d = textureSampleLevel(density_scalar_field, field_sampler, uvw, 0.0).x;
 
         // Convert density -> per-step opacity (Beer-Lambert)
         let sigma_t = 8.0 * d;                 // tune constant
