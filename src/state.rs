@@ -594,7 +594,13 @@ impl State {
 
         self.velocity_vector_field_ping_pong.swap();
 
-        // 
+        // Vorticity Confinement
+
+        // Projection
+
+        // Compute pressure via Jacobi method
+
+        // Subtract pressure gradient from the velocity field.
 
         /* Remove Sources if Present */
 
@@ -617,7 +623,7 @@ impl State {
         }
 
         /* Render simulation result */
-
+        
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
