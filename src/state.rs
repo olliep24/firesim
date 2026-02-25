@@ -28,6 +28,7 @@ const WORKGROUPS: (u32, u32, u32) = (
     NUMBER_DISPATCHES_PER_DIMENSION,
     NUMBER_DISPATCHES_PER_DIMENSION
 );
+const JACOBI_ITERATIONS: u32 = 20;
 
 pub struct State {
     surface: Surface<'static>,
@@ -597,8 +598,12 @@ impl State {
         // Vorticity Confinement
 
         // Projection
-
+        // Compute divergence
+        
         // Compute pressure via Jacobi method
+        for i in 0..JACOBI_ITERATIONS {
+
+        }
 
         // Subtract pressure gradient from the velocity field.
 
@@ -623,7 +628,7 @@ impl State {
         }
 
         /* Render simulation result */
-        
+
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
