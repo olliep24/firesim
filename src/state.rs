@@ -599,7 +599,7 @@ impl State {
 
         // Projection
         // Compute divergence
-        
+
         // Compute pressure via Jacobi method
         for i in 0..JACOBI_ITERATIONS {
 
@@ -927,4 +927,8 @@ fn create_add_forces_to_velocity_compute_step(device: &Device, compute_params_bi
         add_forces_to_velocity_pipeline,
         add_forces_to_velocity_bind_group_layout,
     )
+}
+
+fn create_compute_pressure_compute_step(device: &Device, compute_params_bind_group_layout: &wgpu::BindGroupLayout) -> ComputeStep {
+
 }
