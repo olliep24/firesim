@@ -62,6 +62,7 @@ pub struct State {
     divergence_texture: Texture,
     pressure_ping_pong: PingPong,
     compute_pressure_compute_step: ComputeStep,
+    subtract_pressure_gradient_compute_step: ComputeStep,
     pending_input: bool,
     pub mouse_pressed: bool,
     pub window: Arc<Window>,
@@ -526,6 +527,11 @@ impl State {
             &compute_params_bind_group_layout
         );
 
+        let subtract_pressure_gradient_compute_step = create_subtract_pressure_gradient_compute_step(
+            &device,
+            &compute_params_bind_group_layout
+        );
+
         Ok(Self {
             surface,
             device,
@@ -559,6 +565,7 @@ impl State {
             divergence_texture,
             compute_pressure_compute_step,
             pressure_ping_pong,
+            subtract_pressure_gradient_compute_step,
             pending_input: false,
             mouse_pressed: false,
             window,
@@ -749,10 +756,25 @@ impl State {
                 WORKGROUPS
             );
 
-            self.velocity_vector_field_ping_pong.swap();
+            self.pressure_ping_pong.swap();
         }
 
         // Subtract pressure gradient from the velocity field.
+        let (read_texture, write_texture) = self.velocity_vector_field_ping_pong.get_read_and_write();
+        let textures_read_only: [&wgpu::TextureView; 1] = [&self.pressure_ping_pong.get_read()];
+
+        self.subtract_pressure_gradient_compute_step.dispatch(
+            &self.device,
+            &mut encoder,
+            &self.compute_params_bind_group,
+            read_texture,
+            write_texture,
+            &textures_read_only,
+            Some(self.velocity_vector_field_ping_pong.get_sampler()),
+            WORKGROUPS
+        );
+
+        self.velocity_vector_field_ping_pong.swap();
 
         /* Remove Sources if Present */
 
@@ -1152,5 +1174,84 @@ fn create_compute_pressure_compute_step(device: &Device, compute_params_bind_gro
         "Compute Pressure Compute Step",
         compute_pressure_pipeline,
         compute_pressure_bind_group_layout,
+    )
+}
+
+fn create_subtract_pressure_gradient_compute_step(device: &Device, compute_params_bind_group_layout: &wgpu::BindGroupLayout) -> ComputeStep {
+    let subtract_pressure_gradient_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Subtract Pressure Gradient Bind Group Layout"),
+        entries: &[
+            // 0. Velocity vector field texture read.
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D3,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            },
+            // 1. Vector velocity field texture write.
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::WriteOnly,
+                    format: CHANNEL_FORMAT,
+                    view_dimension: wgpu::TextureViewDimension::D3,
+                },
+                count: None,
+            },
+            // 2. Pressure texture,
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D3,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            },
+            // 3. Sampler.
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            }
+        ]
+    });
+
+    let subtract_pressure_gradient_pipeline_layout =
+        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Subtract Gradient Pipeline Layout"),
+            bind_group_layouts: &[
+                compute_params_bind_group_layout,
+                &subtract_pressure_gradient_bind_group_layout,
+            ],
+            push_constant_ranges: &[],
+        });
+
+    let subtract_pressure_gradient_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Subtract Pressure Gradient Shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("subtract_pressure_gradient.wgsl").into()),
+    });
+
+    let subtract_pressure_gradient_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("Subtract Pressure Gradient Pipeline"),
+        layout: Some(&subtract_pressure_gradient_pipeline_layout),
+        module: &subtract_pressure_gradient_shader,
+        // Will default to @compute
+        entry_point: None,
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    });
+
+    ComputeStep::new(
+        "Subtract Pressure Gradient Compute Step",
+        subtract_pressure_gradient_pipeline,
+        subtract_pressure_gradient_bind_group_layout,
     )
 }
