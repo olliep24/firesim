@@ -20,8 +20,7 @@ is not.
 TODO: My current machine allows this will the texture usages I need, but add check for this.
 TODO: Make just one format.
 */
-const VECTOR_FIELD_CHANNEL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
-const SCALAR_FIELD_CHANNEL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+const CHANNEL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const NUMBER_DISPATCHES_PER_DIMENSION: u32 = GRID_DIMENSION_LENGTH / 4;
 const WORKGROUPS: (u32, u32, u32) = (
     NUMBER_DISPATCHES_PER_DIMENSION,
@@ -61,6 +60,8 @@ pub struct State {
     compute_divergence_bind_group_layout: wgpu::BindGroupLayout,
     compute_divergence_pipeline: wgpu::ComputePipeline,
     divergence_texture: Texture,
+    pressure_ping_pong: PingPong,
+    compute_pressure_compute_step: ComputeStep,
     pending_input: bool,
     pub mouse_pressed: bool,
     pub window: Arc<Window>,
@@ -213,13 +214,13 @@ impl State {
         // TODO: Add note on why we're using a texture here instead of a buffer.
         let scalar_field_texture_a = Texture::create_compute_texture(
             &device,
-            SCALAR_FIELD_CHANNEL_FORMAT,
+            CHANNEL_FORMAT,
             Some("Scalar Field Texture A")
         );
 
         let scalar_field_texture_b = Texture::create_compute_texture(
             &device,
-            SCALAR_FIELD_CHANNEL_FORMAT,
+            CHANNEL_FORMAT,
             Some("Scalar Field Texture B")
         );
 
@@ -230,20 +231,20 @@ impl State {
 
         let scalar_source_texture = Texture::create_compute_texture(
             &device,
-            SCALAR_FIELD_CHANNEL_FORMAT,
+            CHANNEL_FORMAT,
             Some("Scalar Source Texture")
         );
 
         let velocity_vector_field_texture_a = Texture::create_compute_texture(
             &device,
-            VECTOR_FIELD_CHANNEL_FORMAT,
-            Some("Velocity Field Texture")
+            CHANNEL_FORMAT,
+            Some("Velocity Field Texture A")
         );
 
         let velocity_vector_field_texture_b = Texture::create_compute_texture(
             &device,
-            VECTOR_FIELD_CHANNEL_FORMAT,
-            Some("Velocity Field Texture")
+            CHANNEL_FORMAT,
+            Some("Velocity Field Texture B")
         );
 
         let velocity_vector_field_ping_pong = PingPong::new(
@@ -253,7 +254,7 @@ impl State {
 
         let force_source_texture = Texture::create_compute_texture(
             &device,
-            VECTOR_FIELD_CHANNEL_FORMAT,
+            CHANNEL_FORMAT,
             Some("Force Source Texture")
         );
 
@@ -346,7 +347,7 @@ impl State {
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: SCALAR_FIELD_CHANNEL_FORMAT,
+                        format: CHANNEL_FORMAT,
                         view_dimension: wgpu::TextureViewDimension::D3,
                     },
                     count: None,
@@ -357,7 +358,7 @@ impl State {
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: SCALAR_FIELD_CHANNEL_FORMAT,
+                        format: CHANNEL_FORMAT,
                         view_dimension: wgpu::TextureViewDimension::D3,
                     },
                     count: None,
@@ -457,7 +458,7 @@ impl State {
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: SCALAR_FIELD_CHANNEL_FORMAT,
+                        format: CHANNEL_FORMAT,
                         view_dimension: wgpu::TextureViewDimension::D3,
                     },
                     count: None,
@@ -499,8 +500,30 @@ impl State {
 
         let divergence_texture = Texture::create_compute_texture(
             &device,
-            SCALAR_FIELD_CHANNEL_FORMAT,
+            CHANNEL_FORMAT,
             Some("Divergence Texture")
+        );
+
+        let pressure_texture_a = Texture::create_compute_texture(
+            &device,
+            CHANNEL_FORMAT,
+            Some("Pressure Texture A")
+        );
+
+        let pressure_texture_b = Texture::create_compute_texture(
+            &device,
+            CHANNEL_FORMAT,
+            Some("Pressure Texture B")
+        );
+
+        let pressure_ping_pong = PingPong::new(
+            pressure_texture_a,
+            pressure_texture_b,
+        );
+
+        let compute_pressure_compute_step = create_compute_pressure_compute_step(
+            &device,
+            &compute_params_bind_group_layout
         );
 
         Ok(Self {
@@ -534,6 +557,8 @@ impl State {
             compute_divergence_bind_group_layout,
             compute_divergence_pipeline,
             divergence_texture,
+            compute_pressure_compute_step,
+            pressure_ping_pong,
             pending_input: false,
             mouse_pressed: false,
             window,
@@ -709,8 +734,22 @@ impl State {
         }
 
         // Compute pressure via Jacobi method
-        for i in 0..JACOBI_ITERATIONS {
+        for _ in 0..JACOBI_ITERATIONS {
+            let (read_texture, write_texture) = self.pressure_ping_pong.get_read_and_write();
+            let textures_read_only: [&wgpu::TextureView; 1] = [&self.divergence_texture.view];
 
+            self.compute_pressure_compute_step.dispatch(
+                &self.device,
+                &mut encoder,
+                &self.compute_params_bind_group,
+                read_texture,
+                write_texture,
+                &textures_read_only,
+                Some(self.pressure_ping_pong.get_sampler()),
+                WORKGROUPS
+            );
+
+            self.velocity_vector_field_ping_pong.swap();
         }
 
         // Subtract pressure gradient from the velocity field.
@@ -828,7 +867,7 @@ fn create_advect_scalars_compute_step(device: &Device, compute_params_bind_group
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::StorageTexture {
                     access: wgpu::StorageTextureAccess::WriteOnly,
-                    format: SCALAR_FIELD_CHANNEL_FORMAT,
+                    format: CHANNEL_FORMAT,
                     view_dimension: wgpu::TextureViewDimension::D3,
                 },
                 count: None,
@@ -918,7 +957,7 @@ fn create_advect_velocity_compute_step(device: &Device, compute_params_bind_grou
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::StorageTexture {
                     access: wgpu::StorageTextureAccess::WriteOnly,
-                    format: SCALAR_FIELD_CHANNEL_FORMAT,
+                    format: CHANNEL_FORMAT,
                     view_dimension: wgpu::TextureViewDimension::D3,
                 },
                 count: None,
@@ -986,7 +1025,7 @@ fn create_add_forces_to_velocity_compute_step(device: &Device, compute_params_bi
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::StorageTexture {
                     access: wgpu::StorageTextureAccess::WriteOnly,
-                    format: SCALAR_FIELD_CHANNEL_FORMAT,
+                    format: CHANNEL_FORMAT,
                     view_dimension: wgpu::TextureViewDimension::D3,
                 },
                 count: None,
@@ -1037,6 +1076,81 @@ fn create_add_forces_to_velocity_compute_step(device: &Device, compute_params_bi
     )
 }
 
-fn create_compute_pressure_compute_step(device: &Device, compute_params_bind_group_layout: &wgpu::BindGroupLayout) {
+fn create_compute_pressure_compute_step(device: &Device, compute_params_bind_group_layout: &wgpu::BindGroupLayout) -> ComputeStep {
+    let compute_pressure_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Compute Pressure Bind Group Layout"),
+        entries: &[
+            // 0. Pressure texture read.
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D3,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            },
+            // 1. Pressure texture write.
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::WriteOnly,
+                    format: CHANNEL_FORMAT,
+                    view_dimension: wgpu::TextureViewDimension::D3,
+                },
+                count: None,
+            },
+            // 2. Divergence texture read.
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D3,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            },
+            // 3. Sampler,
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            }
+        ]
+    });
 
+    let compute_pressure_pipeline_layout =
+        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Compute Pressure Pipeline Layout"),
+            bind_group_layouts: &[
+                compute_params_bind_group_layout,
+                &compute_pressure_bind_group_layout,
+            ],
+            push_constant_ranges: &[],
+        });
+
+    let compute_pressure_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Compute Pressure Shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("compute_pressure.wgsl").into()),
+    });
+
+    let compute_pressure_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("Add Forces to Velocity Pipeline"),
+        layout: Some(&compute_pressure_pipeline_layout),
+        module: &compute_pressure_shader,
+        // Will default to @compute
+        entry_point: None,
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    });
+
+    ComputeStep::new(
+        "Compute Pressure Compute Step",
+        compute_pressure_pipeline,
+        compute_pressure_bind_group_layout,
+    )
 }

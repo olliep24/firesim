@@ -14,11 +14,11 @@ var<uniform> params: Params;
 
 @group(1) @binding(0)
 var pressure_read: texture_3d<f32>;
-@group(1) @binding(0)
-var pressure_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(1)
-var divergence: texture_3d<f32>;
+var pressure_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
+var divergence: texture_3d<f32>;
+@group(1) @binding(3)
 var field_sampler: sampler;
 
 @compute
@@ -65,7 +65,7 @@ fn voxel_center_uvw(gid: vec3<u32>) -> vec3<f32> {
 // Computes the pressure estimate at the given gid for this iteration of the jacobi method.
 // This is solving the Poisson-pressure equation.
 // This assumes that the cells are one unit apart.
-fn get_pressure_estimate(gid: vec3<u32>) {
+fn get_pressure_estimate(gid: vec3<u32>) -> f32 {
     let right_pressure = get_pressure(vec3<u32>(gid.x + 1, gid.y, gid.z));
     let left_pressure = get_pressure(vec3<u32>(gid.x - 1, gid.y, gid.z));
 
