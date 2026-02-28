@@ -40,13 +40,13 @@ fn main (
         vec4<f32>(density_to_add, 0.0, 0.0, 0.0)
     );
 
-    // Add an outward puff of force. Has an x, y, and z component.
-    let dir = distance_from_center / max(sqrt(distance_from_center2), eps); // normalized
-    let force = dir * strength;
+    // Add an upward force. Upward forces have a non-zero solenoidal component
+    // and survive the pressure projection step, unlike radial outward forces (∇|r|)
+    // which are purely irrotational and get entirely removed by projection.
     textureStore(
         force_source,
         coord,
-        vec4<f32>(force, 0.0)
+        up * strength
     );
 }
 
