@@ -13,9 +13,9 @@ struct Params {
 var<uniform> params: Params;
 
 @group(1) @binding(0)
-var divergence: texture_storage_3d<rgba16float, write>;
-@group(1) @binding(1)
 var velocity_vector_field: texture_3d<f32>;
+@group(1) @binding(1)
+var divergence: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
 var field_sampler: sampler;
 
@@ -40,11 +40,11 @@ fn main (
         return;
     }
 
-    let divergence = get_divergence(gid);
+    let divergence_value = get_divergence(gid);
     textureStore(
         divergence,
         vec3<i32>(gid),
-        vec4<f32>(divergence, 0.0, 0.0, 0.0)
+        vec4<f32>(divergence_value, 0.0, 0.0, 0.0)
     );
 }
 

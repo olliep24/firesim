@@ -58,6 +58,9 @@ pub struct State {
     advect_scalars_compute_step: ComputeStep,
     advect_velocity_compute_step: ComputeStep,
     add_forces_to_velocity_compute_step: ComputeStep,
+    compute_divergence_bind_group_layout: wgpu::BindGroupLayout,
+    compute_divergence_pipeline: wgpu::ComputePipeline,
+    divergence_texture: Texture,
     pending_input: bool,
     pub mouse_pressed: bool,
     pub window: Arc<Window>,
@@ -254,6 +257,7 @@ impl State {
             Some("Force Source Texture")
         );
 
+        // TODO: Rename
         let density_texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Density Texture Bind Group Layout"),
             entries: &[
@@ -433,6 +437,72 @@ impl State {
             &compute_params_bind_group_layout
         );
 
+        let compute_divergence_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Compute Divergence Bind Group Layout"),
+            entries: &[
+                // 0. Velocity vector field texture read.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // 1. Divergence texture write.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: SCALAR_FIELD_CHANNEL_FORMAT,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                    },
+                    count: None,
+                },
+                // 2. Sampler.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                }
+            ]
+        });
+
+        let compute_divergence_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Compute Divergence Pipeline Layout"),
+                bind_group_layouts: &[
+                    &compute_params_bind_group_layout,
+                    &compute_divergence_bind_group_layout,
+                ],
+                push_constant_ranges: &[],
+            });
+
+        let compute_divergence_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Compute Divergence Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("compute_divergence.wgsl").into()),
+        });
+
+        let compute_divergence_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Advect Velocity Pipeline"),
+            layout: Some(&compute_divergence_pipeline_layout),
+            module: &compute_divergence_shader,
+            // Will default to @compute
+            entry_point: None,
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
+
+        let divergence_texture = Texture::create_compute_texture(
+            &device,
+            SCALAR_FIELD_CHANNEL_FORMAT,
+            Some("Divergence Texture")
+        );
+
         Ok(Self {
             surface,
             device,
@@ -461,6 +531,9 @@ impl State {
             advect_scalars_compute_step,
             advect_velocity_compute_step,
             add_forces_to_velocity_compute_step,
+            compute_divergence_bind_group_layout,
+            compute_divergence_pipeline,
+            divergence_texture,
             pending_input: false,
             mouse_pressed: false,
             window,
@@ -599,6 +672,41 @@ impl State {
 
         // Projection
         // Compute divergence
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            compute_pass.set_pipeline(&self.compute_divergence_pipeline);
+
+            let compute_divergence_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Compute Divergence Group"),
+                layout: &self.compute_divergence_bind_group_layout,
+                entries: &[
+                    // binding 0: Velocity vector field read
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&self.velocity_vector_field_ping_pong.get_read())
+                    },
+                    // binding 1: Divergence scalar field write
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&self.divergence_texture.view)
+                    },
+                    // binding 2: Sample
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.velocity_vector_field_ping_pong.get_sampler())
+                    }
+                ],
+            });
+
+            compute_pass.set_bind_group(0, &self.compute_params_bind_group, &[]);
+            compute_pass.set_bind_group(1, &compute_divergence_bind_group, &[]);
+
+            compute_pass.dispatch_workgroups(
+                NUMBER_DISPATCHES_PER_DIMENSION,
+                NUMBER_DISPATCHES_PER_DIMENSION,
+                NUMBER_DISPATCHES_PER_DIMENSION
+            );
+        }
 
         // Compute pressure via Jacobi method
         for i in 0..JACOBI_ITERATIONS {
@@ -929,6 +1037,6 @@ fn create_add_forces_to_velocity_compute_step(device: &Device, compute_params_bi
     )
 }
 
-fn create_compute_pressure_compute_step(device: &Device, compute_params_bind_group_layout: &wgpu::BindGroupLayout) -> ComputeStep {
+fn create_compute_pressure_compute_step(device: &Device, compute_params_bind_group_layout: &wgpu::BindGroupLayout) {
 
 }
