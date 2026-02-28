@@ -67,11 +67,11 @@ fn get_divergence(gid: vec3<u32>) -> f32 {
 
     let up_velocity = get_velocity(vec3<u32>(gid.x, gid.y + 1, gid.z));
     let down_velocity = get_velocity(vec3<u32>(gid.x, gid.y - 1, gid.z));
-    let y_finite_partial = up_velocity.y - down_velocity.y * 0.5;
+    let y_finite_partial = (up_velocity.y - down_velocity.y) * 0.5;
 
     let front_velocity = get_velocity(vec3<u32>(gid.x, gid.y, gid.z + 1));
     let back_velocity = get_velocity(vec3<u32>(gid.x, gid.y, gid.z - 1));
-    let z_finite_partial = front_velocity.z - back_velocity.z * 0.5;
+    let z_finite_partial = (front_velocity.z - back_velocity.z) * 0.5;
 
     return x_finite_partial + y_finite_partial + z_finite_partial;
 }
