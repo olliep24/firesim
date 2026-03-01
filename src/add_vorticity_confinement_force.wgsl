@@ -21,7 +21,7 @@ var curl: texture_3d<f32>;
 @group(1) @binding(3)
 var field_sampler: sampler;
 
-const confinement_constant: f32 = 1.0;
+const confinement_constant: f32 = 0.025;
 
 @compute
 @workgroup_size(4, 4, 4)
