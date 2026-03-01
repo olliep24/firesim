@@ -45,7 +45,7 @@ fn main (
     textureStore(
         scalar_field_write,
         vec3<i32>(gid),
-        vec4<f32>(0.0, current_temperature + heating + cooling, 0.0, 0.0)
+        vec4<f32>(get_fuel(gid), current_temperature + heating + cooling, 0.0, 0.0)
     );
 }
 
