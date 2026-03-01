@@ -63,6 +63,9 @@ pub struct State {
     pressure_ping_pong: PingPong,
     compute_pressure_compute_step: ComputeStep,
     subtract_pressure_gradient_compute_step: ComputeStep,
+    compute_curl_bind_group_layout: wgpu::BindGroupLayout,
+    compute_curl_pipeline: wgpu::ComputePipeline,
+    curl_texture: Texture,
     pending_input: bool,
     pub mouse_pressed: bool,
     pub window: Arc<Window>,
@@ -490,7 +493,7 @@ impl State {
         });
 
         let compute_divergence_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Advect Velocity Pipeline"),
+            label: Some("Compute Divergence Pipeline"),
             layout: Some(&compute_divergence_pipeline_layout),
             module: &compute_divergence_shader,
             // Will default to @compute
@@ -532,6 +535,72 @@ impl State {
             &compute_params_bind_group_layout
         );
 
+        let compute_curl_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Compute Curl Bind Group Layout"),
+            entries: &[
+                // 0. Velocity vector field texture read.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // 1. Curl texture write.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: CHANNEL_FORMAT,
+                        view_dimension: wgpu::TextureViewDimension::D3,
+                    },
+                    count: None,
+                },
+                // 2. Sampler.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                }
+            ]
+        });
+
+        let compute_curl_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Compute Curl Pipeline Layout"),
+                bind_group_layouts: &[
+                    &compute_params_bind_group_layout,
+                    &compute_curl_bind_group_layout,
+                ],
+                push_constant_ranges: &[],
+            });
+
+        let compute_curl_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Compute Curl Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("compute_curl.wgsl").into()),
+        });
+
+        let compute_curl_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("Compute Curl Pipeline"),
+            layout: Some(&compute_curl_pipeline_layout),
+            module: &compute_curl_shader,
+            // Will default to @compute
+            entry_point: None,
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
+
+        let curl_texture = Texture::create_compute_texture(
+            &device,
+            CHANNEL_FORMAT,
+            Some("Curl Texture")
+        );
+
         Ok(Self {
             surface,
             device,
@@ -566,6 +635,9 @@ impl State {
             compute_pressure_compute_step,
             pressure_ping_pong,
             subtract_pressure_gradient_compute_step,
+            compute_curl_bind_group_layout,
+            compute_curl_pipeline,
+            curl_texture,
             pending_input: false,
             mouse_pressed: false,
             window,
@@ -701,6 +773,42 @@ impl State {
         self.velocity_vector_field_ping_pong.swap();
 
         // Vorticity Confinement
+        // Compute curl
+        {
+            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            compute_pass.set_pipeline(&self.compute_curl_pipeline);
+
+            let compute_curl_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Compute Curl Group"),
+                layout: &self.compute_curl_bind_group_layout,
+                entries: &[
+                    // binding 0: Velocity vector field read
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&self.velocity_vector_field_ping_pong.get_read())
+                    },
+                    // binding 1: Divergence scalar field write
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&self.curl_texture.view)
+                    },
+                    // binding 2: Sample
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.velocity_vector_field_ping_pong.get_sampler())
+                    }
+                ],
+            });
+
+            compute_pass.set_bind_group(0, &self.compute_params_bind_group, &[]);
+            compute_pass.set_bind_group(1, &compute_curl_bind_group, &[]);
+
+            compute_pass.dispatch_workgroups(
+                NUMBER_DISPATCHES_PER_DIMENSION,
+                NUMBER_DISPATCHES_PER_DIMENSION,
+                NUMBER_DISPATCHES_PER_DIMENSION
+            );
+        }
 
         // Projection
         // Compute divergence

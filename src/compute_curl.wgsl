@@ -70,3 +70,15 @@ fn get_velocity(index: vec3<u32>) -> vec3<f32> {
     let uvw = voxel_center_uvw(index);
     return textureSampleLevel(velocity_vector_field_read, field_sampler, uvw, 0.0).xyz;
 }
+
+// Returns the center of the voxel indexed at gid.
+fn voxel_center_uvw(gid: vec3<u32>) -> vec3<f32> {
+    let w = f32(params.width);
+    let h = f32(params.height);
+    let d = f32(params.depth);
+    return vec3<f32>(
+        (f32(gid.x) + 0.5) / w,
+        (f32(gid.y) + 0.5) / h,
+        (f32(gid.z) + 0.5) / d
+    );
+}
