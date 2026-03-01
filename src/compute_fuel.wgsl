@@ -20,8 +20,9 @@ var scalar_field_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
 var field_sampler: sampler;
 
-// Takes on values [0, 1]
-const gamma_fuel: f32 = 0.005;
+// Fractional fuel loss per second. With 0.2, fuel halves roughly every 3 seconds —
+// fast enough to observe Stefan-Boltzmann cooling after the fuel burns away.
+const gamma_fuel: f32 = 0.2;
 
 /**
  * Fuel is stored in the first (x) channel.

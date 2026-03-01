@@ -20,8 +20,10 @@ var scalar_field_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
 var field_sampler: sampler;
 
-// The temperature at which the fuel burns.
-const T_burn: f32 = 500.0;
+// Energy released per unit of fuel per second. Temperature is normalized to [0, 1].
+// Equilibrium temperature: T_eq = (T_burn / COOLING_RATE)^0.25
+// With T_burn=3.0 and COOLING_RATE=5.0: T_eq = 0.88 → 1760 K (visible orange)
+const T_burn: f32 = 3.0;
 
 /**
  * Temperature is stored in the second (y) channel.
@@ -42,10 +44,11 @@ fn main (
     let heating = get_heating(gid);
     let cooling = get_cooling(gid);
 
+    let new_temperature = clamp(current_temperature + heating + cooling, 0.0, 1.0);
     textureStore(
         scalar_field_write,
         vec3<i32>(gid),
-        vec4<f32>(get_fuel(gid), current_temperature + heating + cooling, 0.0, 0.0)
+        vec4<f32>(get_fuel(gid), new_temperature, 0.0, 0.0)
     );
 }
 
@@ -73,10 +76,22 @@ fn get_fuel(index: vec3<u32>) -> f32 {
 
 fn get_heating(index: vec3<u32>) -> f32 {
     let fuel = get_fuel(index);
-    return fuel * T_burn;
+    return fuel * T_burn * params.dt;
 }
 
+// Stefan-Boltzmann cooling: dT/dt = -COOLING_RATE * T^4
+//
+// Both heating and cooling are now dt-scaled (rates in per-second units),
+// so they reach equilibrium at: T_eq^4 = (fuel * T_burn) / COOLING_RATE
+//
+// With COOLING_RATE = 2.5 and full fuel (1.0):
+//   T_eq = (1.0 / 2.5)^0.25 ≈ 0.80  →  1600 K  →  orange-yellow
+// With fuel = 0.2:
+//   T_eq ≈ 0.54  →  1080 K  →  dark red
+// Raise COOLING_RATE to make the flame cooler/redder; lower it to make it hotter/whiter.
+const COOLING_RATE: f32 = 5.0;
+
 fn get_cooling(index: vec3<u32>) -> f32 {
-    // TODO: Revisit the Stefan-Boltzmann Law
-    return 0.0;
+    let T = get_current_temperature(index);
+    return -COOLING_RATE * T * T * T * T * params.dt;
 }

@@ -49,7 +49,88 @@ var density_scalar_field: texture_3d<f32>;
 @group(2) @binding(1)
 var field_sampler: sampler;
 
-// Fragment shader
+/* Blackbody radiation helpers */
+
+// Second radiation constant c₂ = hc/k in nm·K units.
+const C2: f32 = 14387769.0;
+
+// T_sim is normalized [0, 1]. T_MAX_KELVIN is what T_sim = 1.0 maps to.
+// 2000 K → orange-yellow fire. Increase for hotter/whiter appearance.
+const T_MAX_KELVIN: f32 = 2000.0;
+
+// Scales the integrated Planck output into a displayable range before tone mapping.
+// The Planck function here omits the leading 2hc² constant (~3.74e-16 SI), so raw
+// XYZ integrals at fire temperatures are ~3e-18 (at 2000 K). We need this scale
+// factor to bring those values into the ~0.3–1.0 range for Reinhard tone mapping.
+// Tune: too dark → increase; blown out → decrease.
+const EMISSION_SCALE: f32 = 1e18;
+
+// Planck spectral radiance B(λ, T), unnormalized (relative values only).
+// Returns 0 when the exponent would overflow f32 (low T or short λ).
+fn planck(lambda_nm: f32, T: f32) -> f32 {
+    let x = C2 / (lambda_nm * T);
+    if x > 85.0 { return 0.0; }
+    return 1.0 / (pow(lambda_nm, 5.0) * (exp(x) - 1.0));
+}
+
+// CIE 1931 color matching functions approximated by sums of Gaussians.
+// Coefficients from Wyman, Sloan & Shirley (2013).
+fn gauss(lambda: f32, mu: f32, sigma: f32) -> f32 {
+    let t = (lambda - mu) / sigma;
+    return exp(-0.5 * t * t);
+}
+
+fn cie_x(l: f32) -> f32 {
+    return 1.056 * gauss(l, 599.8, 37.9)
+         + 0.362 * gauss(l, 442.0, 16.0)
+         - 0.065 * gauss(l, 501.1, 20.4);
+}
+
+fn cie_y(l: f32) -> f32 {
+    return 0.821 * gauss(l, 568.8, 46.4)
+         + 0.286 * gauss(l, 530.9, 21.7);
+}
+
+fn cie_z(l: f32) -> f32 {
+    return 1.217 * gauss(l, 437.0, 17.0)
+         + 0.681 * gauss(l, 459.0, 27.0);
+}
+
+// Numerically integrate Planck × CIE CMFs over 380–720 nm (35 steps × 10 nm).
+fn blackbody_xyz(T: f32) -> vec3<f32> {
+    var xyz = vec3<f32>(0.0);
+    for (var i = 0u; i < 35u; i++) {
+        let l = 380.0 + f32(i) * 10.0;
+        let p = planck(l, T);
+        xyz += vec3<f32>(p * cie_x(l), p * cie_y(l), p * cie_z(l));
+    }
+    return xyz;
+}
+
+// CIE XYZ → linear sRGB using the standard D65 whitepoint matrix.
+// In WGSL mat3x3 is column-major, so each vec3 argument is a column.
+fn xyz_to_linear_srgb(xyz: vec3<f32>) -> vec3<f32> {
+    return mat3x3<f32>(
+        vec3<f32>( 3.2406, -0.9689,  0.0557),
+        vec3<f32>(-1.5372,  1.8758, -0.2040),
+        vec3<f32>(-0.4986,  0.0415,  1.0570)
+    ) * xyz;
+}
+
+// Reinhard tone mapping followed by gamma correction (γ = 2.2).
+fn tone_map(c: vec3<f32>) -> vec3<f32> {
+    let mapped = c / (c + vec3<f32>(1.0));
+    return pow(max(mapped, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2));
+}
+
+// Convert a normalized simulation temperature [0, 1] to a display RGB color.
+fn blackbody_color(T_sim: f32) -> vec3<f32> {
+    let T_k = T_sim * T_MAX_KELVIN;
+    if T_k < 300.0 { return vec3<f32>(0.0); }
+    let xyz = blackbody_xyz(T_k) * EMISSION_SCALE;
+    return tone_map(xyz_to_linear_srgb(xyz));
+}
+
 @fragment
 fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec4<f32> {
     // Frag (pixel) coordinates normalized to 0..1
@@ -77,7 +158,6 @@ fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec
     let t_exit = hit.y;
 
     if (t_exit <= t_enter) {
-        // Miss
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);
     }
 
@@ -86,27 +166,34 @@ fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec
     let ds = len / f32(steps);
 
     var t = t_enter;
+    var accum_color = vec3<f32>(0.0);
     var accum_alpha = 0.0;
 
     for (var i: u32 = 0u; i < steps; i = i + 1u) {
         let p = ro + rd * (t + 0.5 * ds);
+        let uvw = (p - bmin) / (bmax - bmin);
 
-        let uvw = (p - bmin) / (bmax - bmin); // should be 0..1 in-box
-        let d = textureSampleLevel(density_scalar_field, field_sampler, uvw, 0.0).x;
+        let s = textureSampleLevel(density_scalar_field, field_sampler, uvw, 0.0);
+        let fuel = s.x;
+        let temp = s.y; // normalized [0, 1]
 
-        // Convert density -> per-step opacity (Beer-Lambert)
-        let sigma_t = 8.0 * d;                 // tune constant
+        // Opacity from fuel density (Beer-Lambert)
+        let sigma_t = 8.0 * fuel;
         let a = 1.0 - exp(-sigma_t * ds);
 
-        // Front-to-back alpha accumulation (no color yet)
-        accum_alpha = accum_alpha + (1.0 - accum_alpha) * a;
+        // Emission color from blackbody radiation at this temperature
+        let emit_color = blackbody_color(temp);
+
+        // Front-to-back composite: emission weighted by remaining transmittance
+        accum_color += (1.0 - accum_alpha) * emit_color;
+        accum_alpha += (1.0 - accum_alpha) * a;
 
         if (accum_alpha > 0.99) { break; }
 
         t = t + ds;
     }
 
-    return vec4<f32>(accum_alpha, accum_alpha, accum_alpha, 1.0);
+    return vec4<f32>(accum_color, accum_alpha);
 }
 
 fn intersect_aabb(ro: vec3<f32>, rd: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>) -> vec2<f32> {
@@ -121,4 +208,3 @@ fn intersect_aabb(ro: vec3<f32>, rd: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>
     let t_exit  = min(min(tmax3.x, tmax3.y), tmax3.z);
     return vec2<f32>(t_enter, t_exit);
 }
-
