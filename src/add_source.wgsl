@@ -4,7 +4,7 @@ var scalar_source: texture_storage_3d<rgba16float, write>;
 // Location to add scalar values
 // TODO: Maybe add configuration params as input. Maybe through command line?
 const center = vec3<f32>(32.0, 16.0, 32.0);
-const radius: f32 = 4.0;
+const radius: f32 = 12.0;
 const radius2: f32 = radius * radius;
 const peak: f32 = 1.0;
 const strength: f32 = 10.0;

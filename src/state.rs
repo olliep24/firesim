@@ -53,7 +53,6 @@ pub struct State {
     scalar_field_ping_pong: PingPong,
     velocity_vector_field_ping_pong: PingPong,
     scalar_source_texture: Texture,
-    force_source_texture: Texture,
     advect_scalars_compute_step: ComputeStep,
     advect_velocity_compute_step: ComputeStep,
     add_forces_to_velocity_compute_step: ComputeStep,
@@ -257,12 +256,6 @@ impl State {
         let velocity_vector_field_ping_pong = PingPong::new(
             velocity_vector_field_texture_a,
             velocity_vector_field_texture_b,
-        );
-
-        let force_source_texture = Texture::create_compute_texture(
-            &device,
-            CHANNEL_FORMAT,
-            Some("Force Source Texture")
         );
 
         // TODO: Rename
@@ -627,7 +620,6 @@ impl State {
             scalar_field_ping_pong,
             velocity_vector_field_ping_pong,
             scalar_source_texture,
-            force_source_texture,
             advect_scalars_compute_step,
             advect_velocity_compute_step,
             add_forces_to_velocity_compute_step,
@@ -794,7 +786,7 @@ impl State {
 
         // Add forces to velocity
         let (read_texture, write_texture) = self.velocity_vector_field_ping_pong.get_read_and_write();
-        let textures_read_only: [&wgpu::TextureView; 1] = [&self.force_source_texture.view];
+        let textures_read_only: [&wgpu::TextureView; 1] = [self.scalar_field_ping_pong.get_read()];
 
         self.add_forces_to_velocity_compute_step.dispatch(
             &self.device,
@@ -1214,7 +1206,7 @@ fn create_add_forces_to_velocity_compute_step(device: &Device, compute_params_bi
                 },
                 count: None,
             },
-            // 2. Force source texture read.
+            // 2. Scalar texture read.
             wgpu::BindGroupLayoutEntry {
                 binding: 2,
                 visibility: wgpu::ShaderStages::COMPUTE,
