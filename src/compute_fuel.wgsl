@@ -40,7 +40,7 @@ fn main (
 
     let current_fuel = get_fuel(gid);
     let decay = pow(1.0 - gamma_fuel, params.dt);
-    let new_fuel = fuel * decay;
+    let new_fuel = current_fuel * decay;
 
     textureStore(
         scalar_field_write,

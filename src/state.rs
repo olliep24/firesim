@@ -68,6 +68,7 @@ pub struct State {
     curl_texture: Texture,
     add_vorticity_confinement_force_compute_step: ComputeStep,
     compute_temperature_compute_step: ComputeStep,
+    compute_fuel_compute_step: ComputeStep,
     pending_input: bool,
     pub mouse_pressed: bool,
     pub window: Arc<Window>,
@@ -597,6 +598,11 @@ impl State {
             &compute_params_bind_group_layout
         );
 
+        let compute_fuel_compute_step = create_compute_fuel_compute_step(
+            &device,
+            &compute_params_bind_group_layout
+        );
+
         Ok(Self {
             surface,
             device,
@@ -636,6 +642,7 @@ impl State {
             curl_texture,
             add_vorticity_confinement_force_compute_step,
             compute_temperature_compute_step,
+            compute_fuel_compute_step,
             pending_input: false,
             mouse_pressed: false,
             window,
@@ -754,6 +761,20 @@ impl State {
         self.scalar_field_ping_pong.swap();
 
         // Compute fuel usage
+        let (read_texture, write_texture) = self.scalar_field_ping_pong.get_read_and_write();
+
+        self.compute_fuel_compute_step.dispatch(
+            &self.device,
+            &mut encoder,
+            &self.compute_params_bind_group,
+            read_texture,
+            write_texture,
+            &[],
+            Some(self.scalar_field_ping_pong.get_sampler()),
+            WORKGROUPS
+        );
+
+        self.scalar_field_ping_pong.swap();
 
         // Advect velocity
         let (read_texture, write_texture) = self.velocity_vector_field_ping_pong.get_read_and_write();
@@ -1541,5 +1562,73 @@ fn create_compute_temperature_compute_step(device: &Device, compute_params_bind_
         "Advect Scalars Compute Step",
         compute_temperature_pipeline,
         compute_temperature_bind_group_layout,
+    )
+}
+
+fn create_compute_fuel_compute_step(device: &Device, compute_params_bind_group_layout: &wgpu::BindGroupLayout) -> ComputeStep {
+    let compute_fuel_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Compute Fuel Bind Group Layout"),
+        entries: &[
+            // 0. Scalar field texture read.
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Texture {
+                    multisampled: false,
+                    view_dimension: wgpu::TextureViewDimension::D3,
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                },
+                count: None,
+            },
+            // 1. Scalar field texture write.
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::WriteOnly,
+                    format: CHANNEL_FORMAT,
+                    view_dimension: wgpu::TextureViewDimension::D3,
+                },
+                count: None,
+            },
+            // 2. Sampler.
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            }
+        ]
+    });
+
+    let compute_fuel_pipeline_layout =
+        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Compute Fuel Pipeline Layout"),
+            bind_group_layouts: &[
+                compute_params_bind_group_layout,
+                &compute_fuel_bind_group_layout,
+            ],
+            push_constant_ranges: &[],
+        });
+
+    let compute_fuel_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Compute Fuel Shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("compute_fuel.wgsl").into()),
+    });
+
+    let compute_fuel_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("Compute Temperature Pipeline"),
+        layout: Some(&compute_fuel_pipeline_layout),
+        module: &compute_fuel_shader,
+        // Will default to @compute
+        entry_point: None,
+        compilation_options: wgpu::PipelineCompilationOptions::default(),
+        cache: None,
+    });
+
+    ComputeStep::new(
+        "Advect Scalars Compute Step",
+        compute_fuel_pipeline,
+        compute_fuel_bind_group_layout,
     )
 }
