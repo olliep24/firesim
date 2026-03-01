@@ -40,9 +40,7 @@ fn main (
         vec4<f32>(density_to_add, 0.0, 0.0, 0.0)
     );
 
-    // Add an upward force. Upward forces have a non-zero solenoidal component
-    // and survive the pressure projection step, unlike radial outward forces (∇|r|)
-    // which are purely irrotational and get entirely removed by projection.
+    // Add an upward force.
     textureStore(
         force_source,
         coord,
