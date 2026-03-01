@@ -1,9 +1,7 @@
 @group(0) @binding(0)
-var force_source: texture_storage_3d<rgba16float, write>;
-@group(0) @binding(1)
-var density_source: texture_storage_3d<rgba16float, write>;
+var scalar_source: texture_storage_3d<rgba16float, write>;
 
-// Location to add dye density and velocity.
+// Location to add scalar values
 // TODO: Maybe add configuration params as input. Maybe through command line?
 const center = vec3<f32>(32.0, 16.0, 32.0);
 const radius: f32 = 4.0;
@@ -13,7 +11,7 @@ const strength: f32 = 10.0;
 const eps: f32 = 1e-6;
 const up = vec4<f32>(0.0, 1.0, 0.0, 0.0);
 
-/* Adds sources to the density texture and the force texture. Will overwrite entire texture */
+/* Adds sources to the scalar texture. Will overwrite entire texture */
 @compute
 @workgroup_size(4, 4, 4)
 fn main (
@@ -30,53 +28,12 @@ fn main (
 
     let sigma = max(radius * 0.35, 1e-6);
     let sigma2 = sigma * sigma;
-    let density_to_add = peak * exp(-distance_from_center2 / (2.0 * sigma2));
+    let scalar_to_add = peak * exp(-distance_from_center2 / (2.0 * sigma2));
 
     // TODO: consider changing to rate per second, then multiply by dt.
-    // Add the dye
     textureStore(
-        density_source,
+        scalar_source,
         coord,
-        vec4<f32>(density_to_add, 0.0, 0.0, 0.0)
-    );
-
-    // Add an upward force.
-    textureStore(
-        force_source,
-        coord,
-        up * strength
-    );
-}
-
-fn add_density_blob(gid: vec3<u32>) {
-    let coord = vec3<i32>(gid);
-
-    let position = vec3<f32>(gid) + vec3<f32>(0.5);
-    let distance_from_center = position - center;
-    let distance_from_center2 = dot(distance_from_center, distance_from_center);
-
-    // Position is too far from center, pass.
-    if (distance_from_center2 > radius2) { return; }
-
-    let sigma = max(radius * 0.35, 1e-6);
-    let sigma2 = sigma * sigma;
-    let density_to_add = peak * exp(-distance_from_center2 / (2.0 * sigma2));
-
-    // TODO: consider changing to rate per second, then multiply by dt.
-    // Add the dye
-    textureStore(
-        density_source,
-        coord,
-        vec4<f32>(density_to_add, 0.0, 0.0, 0.0)
-    );
-}
-
-fn add_force_up(gid: vec3<u32>) {
-    let coord = vec3<i32>(gid);
-
-    textureStore(
-        force_source,
-        coord,
-        up,
+        vec4<f32>(scalar_to_add, 0.0, 0.0, 0.0)
     );
 }

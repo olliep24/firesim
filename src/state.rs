@@ -49,7 +49,7 @@ pub struct State {
     compute_params_buffer: wgpu::Buffer,
     add_source_pipeline: wgpu::ComputePipeline,
     remove_source_pipeline: wgpu::ComputePipeline,
-    source_bind_group: wgpu::BindGroup,
+    add_source_bind_group: wgpu::BindGroup,
     scalar_field_ping_pong: PingPong,
     velocity_vector_field_ping_pong: PingPong,
     scalar_source_texture: Texture,
@@ -343,23 +343,12 @@ impl State {
             cache: None,
         });
 
-        let source_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Source Bind Group Layout"),
+        let add_source_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Add Source Bind Group Layout"),
             entries: &[
-                // Force source texture write.
+                //  Source texture write.
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: CHANNEL_FORMAT,
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                    },
-                    count: None,
-                },
-                // Density source texture write.
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::StorageTexture {
                         access: wgpu::StorageTextureAccess::WriteOnly,
@@ -371,28 +360,23 @@ impl State {
             ]
         });
 
-        let source_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Source Bind Group"),
-            layout: &source_bind_group_layout,
+        let add_source_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Add Source Bind Group"),
+            layout: &add_source_bind_group_layout,
             entries: &[
-                // binding 0: Velocity vector field
+                // binding 0: Scalar field
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&force_source_texture.view)
-                },
-                // binding 1: Density scalar field
-                wgpu::BindGroupEntry {
-                    binding: 1,
                     resource: wgpu::BindingResource::TextureView(&scalar_source_texture.view)
                 },
             ],
         });
 
-        let source_pipeline_layout =
+        let add_source_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Source Pipeline Layout"),
+                label: Some("Add Source Pipeline Layout"),
                 bind_group_layouts: &[
-                    &source_bind_group_layout,
+                    &add_source_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
             });
@@ -404,7 +388,7 @@ impl State {
 
         let add_source_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("Source Pipeline"),
-            layout: Some(&source_pipeline_layout),
+            layout: Some(&add_source_pipeline_layout),
             module: &add_source_shader,
             // Will default to @compute
             entry_point: None,
@@ -419,7 +403,7 @@ impl State {
 
         let remove_source_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("Source Pipeline"),
-            layout: Some(&source_pipeline_layout),
+            layout: Some(&add_source_pipeline_layout),
             module: &remove_source_shader,
             // Will default to @compute
             entry_point: None,
@@ -627,7 +611,7 @@ impl State {
             compute_params_buffer,
             add_source_pipeline,
             remove_source_pipeline,
-            source_bind_group,
+            add_source_bind_group,
             scalar_field_ping_pong,
             velocity_vector_field_ping_pong,
             scalar_source_texture,
@@ -714,7 +698,7 @@ impl State {
                 let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
                 compute_pass.set_pipeline(&self.add_source_pipeline);
 
-                compute_pass.set_bind_group(0, &self.source_bind_group, &[]);
+                compute_pass.set_bind_group(0, &self.add_source_bind_group, &[]);
 
                 compute_pass.dispatch_workgroups(
                     NUMBER_DISPATCHES_PER_DIMENSION,
@@ -915,7 +899,7 @@ impl State {
                 let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
                 compute_pass.set_pipeline(&self.remove_source_pipeline);
 
-                compute_pass.set_bind_group(0, &self.source_bind_group, &[]);
+                compute_pass.set_bind_group(0, &self.add_source_bind_group, &[]);
 
                 compute_pass.dispatch_workgroups(
                     NUMBER_DISPATCHES_PER_DIMENSION,
