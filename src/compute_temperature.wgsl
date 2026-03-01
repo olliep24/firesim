@@ -18,11 +18,14 @@ var scalar_field_read: texture_3d<f32>;
 @group(1) @binding(1)
 var scalar_field_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
-var velocity_vector_field_texture: texture_3d<f32>;
-@group(1) @binding(3)
-var scalar_source: texture_3d<f32>;
-@group(1) @binding(4)
 var field_sampler: sampler;
+
+// The temperature at which the fuel burns.
+const T_burn: f32 = 500.0;
+
+/**
+ * Temperature is stored in the second (y) channel.
+ */
 
 @compute
 @workgroup_size(4, 4, 4)
@@ -35,22 +38,14 @@ fn main (
         return;
     }
 
-    advect_scalar(gid);
-}
-
-fn advect_scalar(gid: vec3<u32>) {
-    let uvw = voxel_center_uvw(gid);
-    let vel = textureSampleLevel(velocity_vector_field_texture, field_sampler, uvw, 0.0).xyz;
-    let uvw_back = clamp(backtrace(uvw, vel), vec3<f32>(0.0), vec3<f32>(1.0));
-
-    let backtraced_scalar = textureSampleLevel(scalar_field_read, field_sampler, uvw_back, 0.0);
-    let backtraced_scalar_source = textureSampleLevel(scalar_source, field_sampler, uvw_back, 0.0);
-    let total_backtraced_scalar = backtraced_scalar + backtraced_scalar_source;
+    let current_temperature = get_current_temperature(gid);
+    let heating = get_heating(gid);
+    let cooling = get_cooling(gid);
 
     textureStore(
         scalar_field_write,
         vec3<i32>(gid),
-        total_backtraced_scalar
+        vec4<f32>(0.0, current_temperature + heating + cooling, 0.0, 0.0)
     );
 }
 
@@ -66,13 +61,22 @@ fn voxel_center_uvw(gid: vec3<u32>) -> vec3<f32> {
     );
 }
 
-// Returns the uvw backtraced by the given velocity scaled by the simulation timestep.
-fn backtrace(uvw: vec3<f32>, velocity: vec3<f32>) -> vec3<f32> {
-    let w = f32(params.width);
-    let h = f32(params.height);
-    let d = f32(params.depth);
+fn get_current_temperature(index: vec3<u32>) -> f32 {
+    let uvw = voxel_center_uvw(index);
+    return textureSampleLevel(scalar_field_read, field_sampler, uvw, 0.0).y;
+}
 
-    // Velocity is in cells per second so convert to texture coordinates per second, which are in range of [0, 1]
-    let vel_uvw = vec3<f32>(velocity.x / w, velocity.y / h, velocity.z / d);
-    return uvw - params.dt * vel_uvw;
+fn get_fuel(index: vec3<u32>) -> f32 {
+    let uvw = voxel_center_uvw(index);
+    return textureSampleLevel(scalar_field_read, field_sampler, uvw, 0.0).x;
+}
+
+fn get_heating(index: vec3<u32>) -> f32 {
+    let fuel = get_fuel(index);
+    return fuel * T_burn;
+}
+
+fn get_cooling(index: vec3<u32>) -> f32 {
+    // TODO: Revisit the Stefan-Boltzmann Law
+    return 0.0;
 }
