@@ -51,26 +51,28 @@ var field_sampler: sampler;
 
 /* Blackbody radiation helpers */
 
-// Second radiation constant c₂ = hc/k in nm·K units.
-const C2: f32 = 14387769.0;
+// First radiation constant: c₁ = 2hc² = 3.74177419e-16 W·m², expressed in nm units
+// (λ⁵ is in nm⁵, so c₁ is scaled by (10⁹)⁵ / (10⁹)² ... net factor 10⁴⁵ × 10⁻¹⁶ = 10²⁹)
+const C1: f32 = 3.74177e29;   // W · sr⁻¹ · m⁻² · nm⁻⁵
+
+// Second radiation constant: c₂ = hc/k
+const C2: f32 = 14387769.0;   // nm · K
 
 // T_sim is normalized [0, 1]. T_MAX_KELVIN is what T_sim = 1.0 maps to.
 // 2000 K → orange-yellow fire. Increase for hotter/whiter appearance.
 const T_MAX_KELVIN: f32 = 2000.0;
 
-// Scales the integrated Planck output into a displayable range before tone mapping.
-// The Planck function here omits the leading 2hc² constant (~3.74e-16 SI), so raw
-// XYZ integrals at fire temperatures are ~3e-18 (at 2000 K). We need this scale
-// factor to bring those values into the ~0.3–1.0 range for Reinhard tone mapping.
-// Tune: too dark → increase; blown out → decrease.
-const EMISSION_SCALE: f32 = 1e18;
+// Camera exposure: converts physical spectral radiance [W·sr⁻¹·m⁻²] to display range.
+// At 2000 K, the integrated Planck Y ≈ 5e12 W·sr⁻¹·m⁻², so 1e-13 maps peak fire to
+// ~0.5 pre-tone-mapping. Tune: too dark → increase; blown out → decrease.
+const EXPOSURE: f32 = 1e-13;
 
-// Planck spectral radiance B(λ, T), unnormalized (relative values only).
-// Returns 0 when the exponent would overflow f32 (low T or short λ).
-fn planck(lambda_nm: f32, T: f32) -> f32 {
-    let x = C2 / (lambda_nm * T);
+// Planck spectral radiance B(λ, T) = c₁ / (λ⁵ · (exp(c₂/λT) − 1))
+// Returns 0 when the exponent would overflow f32 (very low T or short λ).
+fn planck(lambda_nm: f32, T_K: f32) -> f32 {
+    let x = C2 / (lambda_nm * T_K);
     if x > 85.0 { return 0.0; }
-    return 1.0 / (pow(lambda_nm, 5.0) * (exp(x) - 1.0));
+    return C1 / (pow(lambda_nm, 5.0) * (exp(x) - 1.0));
 }
 
 // CIE 1931 color matching functions approximated by sums of Gaussians.
@@ -97,14 +99,15 @@ fn cie_z(l: f32) -> f32 {
 }
 
 // Numerically integrate Planck × CIE CMFs over 380–720 nm (35 steps × 10 nm).
-fn blackbody_xyz(T: f32) -> vec3<f32> {
+// Returns physical radiance scaled by EXPOSURE for display.
+fn blackbody_xyz(T_K: f32) -> vec3<f32> {
     var xyz = vec3<f32>(0.0);
     for (var i = 0u; i < 35u; i++) {
         let l = 380.0 + f32(i) * 10.0;
-        let p = planck(l, T);
+        let p = planck(l, T_K);
         xyz += vec3<f32>(p * cie_x(l), p * cie_y(l), p * cie_z(l));
     }
-    return xyz;
+    return xyz * EXPOSURE;
 }
 
 // CIE XYZ → linear sRGB using the standard D65 whitepoint matrix.
@@ -125,9 +128,9 @@ fn tone_map(c: vec3<f32>) -> vec3<f32> {
 
 // Convert a normalized simulation temperature [0, 1] to a display RGB color.
 fn blackbody_color(T_sim: f32) -> vec3<f32> {
-    let T_k = T_sim * T_MAX_KELVIN;
-    if T_k < 300.0 { return vec3<f32>(0.0); }
-    let xyz = blackbody_xyz(T_k) * EMISSION_SCALE;
+    let T_K = T_sim * T_MAX_KELVIN;
+    if T_K < 300.0 { return vec3<f32>(0.0); }
+    let xyz = blackbody_xyz(T_K);
     return tone_map(xyz_to_linear_srgb(xyz));
 }
 

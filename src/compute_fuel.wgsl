@@ -22,7 +22,7 @@ var field_sampler: sampler;
 
 // Fractional fuel loss per second. With 0.2, fuel halves roughly every 3 seconds —
 // fast enough to observe Stefan-Boltzmann cooling after the fuel burns away.
-const gamma_fuel: f32 = 0.2;
+const gamma_fuel: f32 = 0.5;
 
 /**
  * Fuel is stored in the first (x) channel.

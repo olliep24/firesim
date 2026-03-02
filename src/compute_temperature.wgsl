@@ -20,10 +20,24 @@ var scalar_field_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
 var field_sampler: sampler;
 
-// Energy released per unit of fuel per second. Temperature is normalized to [0, 1].
-// Equilibrium temperature: T_eq = (T_burn / COOLING_RATE)^0.25
-// With T_burn=3.0 and COOLING_RATE=5.0: T_eq = 0.88 → 1760 K (visible orange)
-const T_burn: f32 = 3.0;
+// Temperature normalization: T_sim ∈ [0,1], where T_sim = 1.0 corresponds to T_MAX_KELVIN.
+// Must match T_MAX_KELVIN in render_shader.wgsl.
+const T_MAX_KELVIN: f32 = 2000.0;
+
+// Stefan-Boltzmann constant
+const SIGMA: f32 = 5.6704e-8;   // W · m⁻² · K⁻⁴
+
+// Emissivity of soot-laden fire gas (dimensionless, 0..1).
+// 1.0 = perfect blackbody; soot-laden combustion gas ≈ 0.85.
+const EMISSIVITY: f32 = 0.85;
+
+// Thermal mass per unit area: ρ × c_v × L  [J · m⁻² · K⁻¹]
+// For hot combustion gas: ρ ≈ 0.35 kg/m³, c_v ≈ 1005 J/(kg·K), L = voxel side [m].
+// A value of ~75 corresponds to ~0.21 m voxels. Increase to slow cooling; decrease to speed it up.
+const THERMAL_MASS: f32 = 75.0;
+
+// Energy released per unit of fuel per second (fuel-property constant).
+const T_burn: f32 = 1.0;
 
 /**
  * Temperature is stored in the second (y) channel.
@@ -79,19 +93,15 @@ fn get_heating(index: vec3<u32>) -> f32 {
     return fuel * T_burn * params.dt;
 }
 
-// Stefan-Boltzmann cooling: dT/dt = -COOLING_RATE * T^4
+// Stefan-Boltzmann radiative cooling: dT_K/dt = −(ε·σ / MC) · T_K⁴
 //
-// Both heating and cooling are now dt-scaled (rates in per-second units),
-// so they reach equilibrium at: T_eq^4 = (fuel * T_burn) / COOLING_RATE
-//
-// With COOLING_RATE = 2.5 and full fuel (1.0):
-//   T_eq = (1.0 / 2.5)^0.25 ≈ 0.80  →  1600 K  →  orange-yellow
-// With fuel = 0.2:
-//   T_eq ≈ 0.54  →  1080 K  →  dark red
-// Raise COOLING_RATE to make the flame cooler/redder; lower it to make it hotter/whiter.
-const COOLING_RATE: f32 = 5.0;
-
+// Converting to normalized simulation temperature (T_sim = T_K / T_MAX_KELVIN):
+//   dT_sim/dt = −(ε·σ·T_MAX_KELVIN³ / MC) · T_sim⁴
 fn get_cooling(index: vec3<u32>) -> f32 {
-    let T = get_current_temperature(index);
-    return -COOLING_RATE * T * T * T * T * params.dt;
+    let T_sim = get_current_temperature(index);
+    let T_K = T_sim * T_MAX_KELVIN;
+    // dT_K/dt = -(ε·σ / MC) · T_K⁴
+    let dTK_dt = -(EMISSIVITY * SIGMA / THERMAL_MASS) * T_K * T_K * T_K * T_K;
+    // Convert back to normalized units and apply timestep
+    return (dTK_dt / T_MAX_KELVIN) * params.dt;
 }
