@@ -67,7 +67,7 @@ pub struct State {
     curl_texture: Texture,
     add_vorticity_confinement_force_compute_step: ComputeStep,
     compute_temperature_compute_step: ComputeStep,
-    compute_fuel_compute_step: ComputeStep,
+    compute_smoke_compute_step: ComputeStep,
     pending_input: bool,
     pub mouse_pressed: bool,
     pub window: Arc<Window>,
@@ -591,7 +591,7 @@ impl State {
             &compute_params_bind_group_layout
         );
 
-        let compute_fuel_compute_step = create_compute_fuel_compute_step(
+        let compute_smoke_compute_step = create_compute_smoke_compute_step(
             &device,
             &compute_params_bind_group_layout
         );
@@ -634,7 +634,7 @@ impl State {
             curl_texture,
             add_vorticity_confinement_force_compute_step,
             compute_temperature_compute_step,
-            compute_fuel_compute_step,
+            compute_smoke_compute_step,
             pending_input: false,
             mouse_pressed: false,
             window,
@@ -674,7 +674,7 @@ impl State {
         if code == KeyCode::Escape && key_state.is_pressed() {
             event_loop.exit();
         } else if code == KeyCode::KeyF && key_state.is_pressed() {
-            self.pending_input = true;
+            self.pending_input = !self.pending_input;
         } else {
             self.camera_controller.process_keyboard(code, key_state);
         }
@@ -752,10 +752,10 @@ impl State {
 
         self.scalar_field_ping_pong.swap();
 
-        // Compute fuel usage
+        // Decay smoke density
         let (read_texture, write_texture) = self.scalar_field_ping_pong.get_read_and_write();
 
-        self.compute_fuel_compute_step.dispatch(
+        self.compute_smoke_compute_step.dispatch(
             &self.device,
             &mut encoder,
             &self.compute_params_bind_group,
@@ -945,9 +945,6 @@ impl State {
                     NUMBER_DISPATCHES_PER_DIMENSION
                 );
             }
-
-            // We are done adding the sources.
-            self.pending_input = false;
         }
 
         /* Render simulation result */
@@ -1557,9 +1554,9 @@ fn create_compute_temperature_compute_step(device: &Device, compute_params_bind_
     )
 }
 
-fn create_compute_fuel_compute_step(device: &Device, compute_params_bind_group_layout: &wgpu::BindGroupLayout) -> ComputeStep {
-    let compute_fuel_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("Compute Fuel Bind Group Layout"),
+fn create_compute_smoke_compute_step(device: &Device, compute_params_bind_group_layout: &wgpu::BindGroupLayout) -> ComputeStep {
+    let compute_smoke_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("Compute Smoke Bind Group Layout"),
         entries: &[
             // 0. Scalar field texture read.
             wgpu::BindGroupLayoutEntry {
@@ -1593,25 +1590,25 @@ fn create_compute_fuel_compute_step(device: &Device, compute_params_bind_group_l
         ]
     });
 
-    let compute_fuel_pipeline_layout =
+    let compute_smoke_pipeline_layout =
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Compute Fuel Pipeline Layout"),
+            label: Some("Compute Smoke Pipeline Layout"),
             bind_group_layouts: &[
                 compute_params_bind_group_layout,
-                &compute_fuel_bind_group_layout,
+                &compute_smoke_bind_group_layout,
             ],
             push_constant_ranges: &[],
         });
 
-    let compute_fuel_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("Compute Fuel Shader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("compute_fuel.wgsl").into()),
+    let compute_smoke_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("Compute Smoke Shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("compute_smoke.wgsl").into()),
     });
 
-    let compute_fuel_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("Compute Temperature Pipeline"),
-        layout: Some(&compute_fuel_pipeline_layout),
-        module: &compute_fuel_shader,
+    let compute_smoke_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("Compute Smoke Pipeline"),
+        layout: Some(&compute_smoke_pipeline_layout),
+        module: &compute_smoke_shader,
         // Will default to @compute
         entry_point: None,
         compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -1619,8 +1616,8 @@ fn create_compute_fuel_compute_step(device: &Device, compute_params_bind_group_l
     });
 
     ComputeStep::new(
-        "Advect Scalars Compute Step",
-        compute_fuel_pipeline,
-        compute_fuel_bind_group_layout,
+        "Compute Smoke Compute Step",
+        compute_smoke_pipeline,
+        compute_smoke_bind_group_layout,
     )
 }

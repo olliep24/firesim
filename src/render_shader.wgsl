@@ -43,7 +43,7 @@ fn vs_main(@builtin(vertex_index) vid: u32) -> @builtin(position) vec4<f32> {
     return vec4<f32>(pos[vid], 0.0, 1.0);
 }
 
-// Texture bindings
+// Texture bindings: x = smoke density, y = temperature (normalized [0,1])
 @group(2) @binding(0)
 var density_scalar_field: texture_3d<f32>;
 @group(2) @binding(1)
@@ -66,6 +66,10 @@ const T_MAX_KELVIN: f32 = 2000.0;
 // At 2000 K, the integrated Planck Y ≈ 5e12 W·sr⁻¹·m⁻², so 1e-13 maps peak fire to
 // ~0.5 pre-tone-mapping. Tune: too dark → increase; blown out → decrease.
 const EXPOSURE: f32 = 1e-13;
+
+// Grey color for cool smoke scattering ambient light.
+// Increase for brighter/lighter smoke; decrease for darker smoke.
+const SMOKE_COLOR: vec3<f32> = vec3<f32>(0.35, 0.35, 0.35);
 
 // Planck spectral radiance B(λ, T) = c₁ / (λ⁵ · (exp(c₂/λT) − 1))
 // Returns 0 when the exponent would overflow f32 (very low T or short λ).
@@ -177,18 +181,23 @@ fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec
         let uvw = (p - bmin) / (bmax - bmin);
 
         let s = textureSampleLevel(density_scalar_field, field_sampler, uvw, 0.0);
-        let fuel = s.x;
-        let temp = s.y; // normalized [0, 1]
+        let smoke = s.x;
+        let temp  = s.y; // normalized [0, 1]
 
-        // Opacity from fuel density (Beer-Lambert)
-        let sigma_t = 8.0 * fuel;
+        // Opacity from smoke density (Beer-Lambert absorption)
+        let sigma_t = 8.0 * smoke;
         let a = 1.0 - exp(-sigma_t * ds);
 
-        // Emission color from blackbody radiation at this temperature
-        let emit_color = blackbody_color(temp);
+        // Blackbody emission from hot soot (returns black below 300 K)
+        let fire_color = blackbody_color(temp);
 
-        // Front-to-back composite: emission weighted by remaining transmittance
-        accum_color += (1.0 - accum_alpha) * emit_color;
+        // Blend: cool smoke → grey scatter; hot smoke → blackbody fire color.
+        // Below T_sim=0.1 (200 K): pure grey smoke.
+        // Above T_sim=0.4 (800 K): pure fire color.
+        let blend = smoothstep(0.1, 0.4, temp);
+        let emit_color = mix(SMOKE_COLOR, fire_color, blend);
+
+        accum_color += (1.0 - accum_alpha) * a * emit_color;
         accum_alpha += (1.0 - accum_alpha) * a;
 
         if (accum_alpha > 0.99) { break; }

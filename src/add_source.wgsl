@@ -3,8 +3,8 @@ var scalar_source: texture_storage_3d<rgba16float, write>;
 
 // Location to add scalar values
 // TODO: Maybe add configuration params as input. Maybe through command line?
-const center = vec3<f32>(32.0, 16.0, 32.0);
-const radius: f32 = 12.0;
+const center = vec3<f32>(64.0, 32.0, 64.0);
+const radius: f32 = 24.0;
 const radius2: f32 = radius * radius;
 const peak: f32 = 1.0;
 const strength: f32 = 10.0;
@@ -30,10 +30,12 @@ fn main (
     let sigma2 = sigma * sigma;
     let scalar_to_add = peak * exp(-distance_from_center2 / (2.0 * sigma2));
 
+    // X = smoke density, Y = temperature (source is the hot combustion zone).
+    // Both are injected at equal intensity so the fire base is immediately at max temperature.
     // TODO: consider changing to rate per second, then multiply by dt.
     textureStore(
         scalar_source,
         coord,
-        vec4<f32>(scalar_to_add, 0.0, 0.0, 0.0)
+        vec4<f32>(scalar_to_add, scalar_to_add, 0.0, 0.0)
     );
 }

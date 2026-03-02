@@ -20,12 +20,13 @@ var scalar_field_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
 var field_sampler: sampler;
 
-// Fractional fuel loss per second. With 0.2, fuel halves roughly every 3 seconds —
-// fast enough to observe Stefan-Boltzmann cooling after the fuel burns away.
-const gamma_fuel: f32 = 0.5;
+// Fractional smoke dissipation per second.
+// With 0.1, smoke density halves roughly every 7 seconds — slow enough to see
+// the smoke plume persist and rise well above the fire source.
+const gamma_smoke: f32 = 0.5;
 
 /**
- * Fuel is stored in the first (x) channel.
+ * Smoke density is stored in the first (x) channel.
  */
 
 @compute
@@ -39,14 +40,14 @@ fn main (
         return;
     }
 
-    let current_fuel = get_fuel(gid);
-    let decay = pow(1.0 - gamma_fuel, params.dt);
-    let new_fuel = current_fuel * decay;
+    let current_smoke = get_smoke(gid);
+    let decay = pow(1.0 - gamma_smoke, params.dt);
+    let new_smoke = current_smoke * decay;
 
     textureStore(
         scalar_field_write,
         vec3<i32>(gid),
-        vec4<f32>(new_fuel, get_temperature(gid), 0.0, 0.0)
+        vec4<f32>(new_smoke, get_temperature(gid), 0.0, 0.0)
     );
 }
 
@@ -62,7 +63,7 @@ fn voxel_center_uvw(gid: vec3<u32>) -> vec3<f32> {
     );
 }
 
-fn get_fuel(index: vec3<u32>) -> f32 {
+fn get_smoke(index: vec3<u32>) -> f32 {
     let uvw = voxel_center_uvw(index);
     return textureSampleLevel(scalar_field_read, field_sampler, uvw, 0.0).x;
 }
