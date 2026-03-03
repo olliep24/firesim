@@ -58,10 +58,6 @@ const C1: f32 = 3.74177e29;   // W · sr⁻¹ · m⁻² · nm⁻⁵
 // Second radiation constant: c₂ = hc/k
 const C2: f32 = 14387769.0;   // nm · K
 
-// T_sim is normalized [0, 1]. T_MAX_KELVIN is what T_sim = 1.0 maps to.
-// 2000 K → orange-yellow fire. Increase for hotter/whiter appearance.
-const T_MAX_KELVIN: f32 = 2000.0;
-
 // Camera exposure: converts physical spectral radiance [W·sr⁻¹·m⁻²] to display range.
 // At 2000 K, the integrated Planck Y ≈ 5e12 W·sr⁻¹·m⁻², so 1e-13 maps peak fire to
 // ~0.5 pre-tone-mapping. Tune: too dark → increase; blown out → decrease.
@@ -130,11 +126,10 @@ fn tone_map(c: vec3<f32>) -> vec3<f32> {
     return pow(max(mapped, vec3<f32>(0.0)), vec3<f32>(1.0 / 2.2));
 }
 
-// Convert a normalized simulation temperature [0, 1] to a display RGB color.
-fn blackbody_color(T_sim: f32) -> vec3<f32> {
-    let T_K = T_sim * T_MAX_KELVIN;
-    if T_K < 300.0 { return vec3<f32>(0.0); }
-    let xyz = blackbody_xyz(T_K);
+// Convert simulation temperature (Kelvin) to a display RGB color.
+fn blackbody_color(temperature: f32) -> vec3<f32> {
+    if temperature < 300.0 { return vec3<f32>(0.0); }
+    let xyz = blackbody_xyz(temperature);
     return tone_map(xyz_to_linear_srgb(xyz));
 }
 
@@ -182,7 +177,7 @@ fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec
 
         let s = textureSampleLevel(density_scalar_field, field_sampler, uvw, 0.0);
         let smoke = s.x;
-        let temp  = s.y; // normalized [0, 1]
+        let temp = s.y;
 
         // Opacity from smoke density (Beer-Lambert absorption)
         let sigma_t = 8.0 * smoke;
@@ -197,7 +192,7 @@ fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec
         let blend = smoothstep(0.1, 0.4, temp);
         let emit_color = mix(SMOKE_COLOR, fire_color, blend);
 
-        accum_color += (1.0 - accum_alpha) * a * emit_color;
+        accum_color += fire_color;
         accum_alpha += (1.0 - accum_alpha) * a;
 
         if (accum_alpha > 0.99) { break; }
@@ -205,7 +200,7 @@ fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec
         t = t + ds;
     }
 
-    return vec4<f32>(accum_color, accum_alpha);
+    return vec4<f32>(accum_color, 1.0);
 }
 
 fn intersect_aabb(ro: vec3<f32>, rd: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>) -> vec2<f32> {

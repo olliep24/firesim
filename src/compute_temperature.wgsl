@@ -21,8 +21,8 @@ var scalar_field_write: texture_storage_3d<rgba16float, write>;
 var field_sampler: sampler;
 
 // Temperature normalization: T_sim ∈ [0,1], where T_sim = 1.0 corresponds to T_MAX_KELVIN.
-// Must match T_MAX_KELVIN in render_shader.wgsl.
-const T_MAX_KELVIN: f32 = 2000.0;
+// Must match T_MAX_KELVIN in render_shader.wgsl. TODO: Update.
+const BURN_TEMPERATURE: f32 = 2000.0;
 
 // Stefan-Boltzmann constant (NIST 2018 CODATA)
 const SIGMA: f32 = 5.6704e-8;   // W · m⁻² · K⁻⁴
@@ -34,7 +34,7 @@ const EMISSIVITY: f32 = 0.85;
 // Thermal mass per unit area: ρ × c_v × L  [J · m⁻² · K⁻¹]
 // At 750: T(1s) = 0.73 → 1460 K (orange), T(3s) = 0.56 → 1120 K (red).
 // Increase to slow the yellow→red gradient; decrease to speed it up.
-const THERMAL_MASS: f32 = 750.0;
+const THERMAL_MASS: f32 = 50.0;
 
 /**
  * Temperature is stored in the second (y) channel.
@@ -53,8 +53,12 @@ fn main (
 
     let current_temperature = get_current_temperature(gid);
     let cooling = get_cooling(gid);
+    let cooled_temperature = current_temperature + cooling;
 
-    let new_temperature = clamp(current_temperature + cooling, 0.0, 1.0);
+    let fuel = get_fuel(gid);
+    let fuel_temperature = fuel * BURN_TEMPERATURE;
+
+    let new_temperature = max(cooled_temperature, fuel_temperature);
     textureStore(
         scalar_field_write,
         vec3<i32>(gid),
@@ -90,9 +94,14 @@ fn get_smoke(index: vec3<u32>) -> f32 {
 //   dT_sim/dt = −(ε·σ·T_MAX_KELVIN³ / MC) · T_sim⁴
 fn get_cooling(index: vec3<u32>) -> f32 {
     let T_sim = get_current_temperature(index);
-    let T_K = T_sim * T_MAX_KELVIN;
+    let T_K = T_sim;
     // dT_K/dt = -(ε·σ / MC) · T_K⁴
     let dTK_dt = -(EMISSIVITY * SIGMA / THERMAL_MASS) * T_K * T_K * T_K * T_K;
     // Convert back to normalized units and apply timestep
-    return (dTK_dt / T_MAX_KELVIN) * params.dt;
+    return dTK_dt * params.dt;
+}
+
+fn get_fuel(index: vec3<u32>) -> f32 {
+    let uvw = voxel_center_uvw(index);
+    return textureSampleLevel(scalar_field_read, field_sampler, uvw, 0.0).z;
 }

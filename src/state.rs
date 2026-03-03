@@ -371,6 +371,16 @@ impl State {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Add Source Pipeline Layout"),
                 bind_group_layouts: &[
+                    &compute_params_bind_group_layout,
+                    &add_source_bind_group_layout,
+                ],
+                push_constant_ranges: &[],
+            });
+
+        let remove_source_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Remove Source Pipeline Layout"),
+                bind_group_layouts: &[
                     &add_source_bind_group_layout,
                 ],
                 push_constant_ranges: &[],
@@ -397,8 +407,8 @@ impl State {
         });
 
         let remove_source_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Source Pipeline"),
-            layout: Some(&add_source_pipeline_layout),
+            label: Some("Remove Source Pipeline"),
+            layout: Some(&remove_source_pipeline_layout),
             module: &remove_source_shader,
             // Will default to @compute
             entry_point: None,
@@ -704,7 +714,8 @@ impl State {
                 let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
                 compute_pass.set_pipeline(&self.add_source_pipeline);
 
-                compute_pass.set_bind_group(0, &self.add_source_bind_group, &[]);
+                compute_pass.set_bind_group(0, &self.compute_params_bind_group, &[]);
+                compute_pass.set_bind_group(1, &self.add_source_bind_group, &[]);
 
                 compute_pass.dispatch_workgroups(
                     NUMBER_DISPATCHES_PER_DIMENSION,
