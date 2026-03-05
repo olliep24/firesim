@@ -47,7 +47,7 @@ fn main (
     textureStore(
         scalar_field_write,
         vec3<i32>(gid),
-        vec4<f32>(new_smoke, get_temperature(gid), 0.0, 0.0)
+        vec4<f32>(new_smoke, get_temperature(gid), get_fuel(gid), 0.0)
     );
 }
 
@@ -71,4 +71,9 @@ fn get_smoke(index: vec3<u32>) -> f32 {
 fn get_temperature(index: vec3<u32>) -> f32 {
     let uvw = voxel_center_uvw(index);
     return textureSampleLevel(scalar_field_read, field_sampler, uvw, 0.0).y;
+}
+
+fn get_fuel(index: vec3<u32>) -> f32 {
+    let uvw = voxel_center_uvw(index);
+    return textureSampleLevel(scalar_field_read, field_sampler, uvw, 0.0).z;
 }

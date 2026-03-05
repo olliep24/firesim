@@ -127,10 +127,27 @@ fn tone_map(c: vec3<f32>) -> vec3<f32> {
 }
 
 // Convert simulation temperature (Kelvin) to a display RGB color.
+//fn blackbody_color(temperature: f32) -> vec3<f32> {
+//    if temperature < 300.0 { return vec3<f32>(0.0); }
+//    let xyz = blackbody_xyz(temperature);
+//    return tone_map(xyz_to_linear_srgb(xyz));
+//}
+
 fn blackbody_color(temperature: f32) -> vec3<f32> {
-    if temperature < 300.0 { return vec3<f32>(0.0); }
-    let xyz = blackbody_xyz(temperature);
-    return tone_map(xyz_to_linear_srgb(xyz));
+    let t = temperature * (3000.0 / 1700.0);
+    let cx = (0.860117757 + 1.54118254e-4*t + 1.28641212e-7*t*t)
+           / (1.0 + 8.42420235e-4*t + 7.08145163e-7*t*t);
+    let cy = (0.317398726 + 4.22806245e-5*t + 4.20481691e-8*t*t)
+           / (1.0 - 2.89741816e-5*t + 1.61456053e-7*t*t);
+    let d = 2.0*cx - 8.0*cy + 4.0;
+    let XYZ = vec3<f32>(3.0*cx/d, 2.0*cy/d, 1.0 - (3.0*cx + 2.0*cy)/d);
+    let RGB = mat3x3<f32>(
+        vec3<f32>(3.240479, -0.969256,  0.055648),
+        vec3<f32>(-1.537150, 1.875992, -0.204043),
+        vec3<f32>(-0.498535, 0.041556,  1.057311)
+    ) * vec3<f32>(XYZ.x/XYZ.y, 1.0, XYZ.z/XYZ.y);
+    let brightness = pow(t * 0.0004, 4.0);
+    return max(RGB, vec3<f32>(0.0)) * brightness;
 }
 
 @fragment
@@ -176,23 +193,11 @@ fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec
         let uvw = (p - bmin) / (bmax - bmin);
 
         let s = textureSampleLevel(density_scalar_field, field_sampler, uvw, 0.0);
-        let smoke = s.x;
         let temp = s.y;
 
-        // Opacity from smoke density (Beer-Lambert absorption)
-        let sigma_t = 8.0 * smoke;
-        let a = 1.0 - exp(-sigma_t * ds);
+        let a = 0.05 * ds;
 
-        // Blackbody emission from hot soot (returns black below 300 K)
-        let fire_color = blackbody_color(temp);
-
-        // Blend: cool smoke → grey scatter; hot smoke → blackbody fire color.
-        // Below T_sim=0.1 (200 K): pure grey smoke.
-        // Above T_sim=0.4 (800 K): pure fire color.
-        let blend = smoothstep(0.1, 0.4, temp);
-        let emit_color = mix(SMOKE_COLOR, fire_color, blend);
-
-        accum_color += fire_color;
+        accum_color += (1.0 - accum_alpha) * a * blackbody_color(temp);
         accum_alpha += (1.0 - accum_alpha) * a;
 
         if (accum_alpha > 0.99) { break; }
@@ -200,7 +205,7 @@ fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec
         t = t + ds;
     }
 
-    return vec4<f32>(accum_color, 1.0);
+    return vec4<f32>(accum_color, accum_alpha);
 }
 
 fn intersect_aabb(ro: vec3<f32>, rd: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>) -> vec2<f32> {
