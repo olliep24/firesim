@@ -16,7 +16,7 @@ var<uniform> params: Params;
 var scalar_source: texture_storage_3d<rgba16float, write>;
 
 const center:  vec3<f32> = vec3<f32>(64.0, 32.0, 64.0);
-const radius:  f32 = 24.0;
+const radius:  f32 = 32.0;
 const radius2: f32 = radius * radius;
 const peak:    f32 = 1.0;
 
