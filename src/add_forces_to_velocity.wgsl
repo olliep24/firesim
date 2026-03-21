@@ -21,7 +21,7 @@ var velocity_vector_field_write: texture_storage_3d<rgba16float, write>;
 var scalar_field_read: texture_3d<f32>;
 
 const up = vec3<f32>(0.0, 1.0, 0.0);
-const beta = 0.1;
+const beta = 0.01;
 
 @compute @workgroup_size(4,4,4)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {

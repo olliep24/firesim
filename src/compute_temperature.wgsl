@@ -50,7 +50,7 @@ fn main (
     let fuel = get_fuel(gid);
     let fuel_temperature = fuel * BURN_TEMPERATURE;
 
-    let new_temperature = max(cooled_temperature, fuel_temperature);
+    let new_temperature = clamp(max(cooled_temperature, fuel_temperature), 0.0, BURN_TEMPERATURE);
     textureStore(
         scalar_field_write,
         vec3<i32>(gid),
