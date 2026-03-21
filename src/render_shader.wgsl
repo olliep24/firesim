@@ -196,7 +196,8 @@ fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec
         let temp = s.y;
         let fuel = s.z;
 
-        let extinction = tanh(10.0 * fuel);
+        let hot_fraction = smoothstep(900.0, 1400.0, temp);
+        let extinction = tanh(10.0 * fuel) * hot_fraction;
 
         accum_color += (1.0 - accum_alpha) * extinction * ds * blackbody_color(temp);
         accum_alpha += (1.0 - accum_alpha) * extinction * ds;

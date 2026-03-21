@@ -22,11 +22,7 @@ var field_sampler: sampler;
 
 
 const COOLING: f32 = 3000.0;
-const BURN_TEMPERATURE: f32 = 1700.0;
-
-// Temperature normalization: T_sim ∈ [0,1], where T_sim = 1.0 corresponds to T_MAX_KELVIN.
-// Must match T_MAX_KELVIN in render_shader.wgsl. TODO: Update.
-// const BURN_TEMPERATURE: f32 = 2000.0;
+const BURN_TEMPERATURE: f32 = 2000.0;
 
 /**
  * Temperature is stored in the second (y) channel.
