@@ -50,7 +50,7 @@ fn advect_scalar(gid: vec3<u32>) {
     textureStore(
         scalar_field_write,
         vec3<i32>(gid),
-        total_backtraced_scalar
+        vec4<f32>(total_backtraced_scalar.x, total_backtraced_scalar.y, backtraced_scalar_source.z, total_backtraced_scalar.w)
     );
 }
 

@@ -187,6 +187,7 @@ fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec
     var t = t_enter;
     var accum_color = vec3<f32>(0.0);
     var accum_alpha = 0.0;
+    let alpha_step = 1.0 / f32(steps);
 
     for (var i: u32 = 0u; i < steps; i = i + 1u) {
         let p = ro + rd * (t + 0.5 * ds);
@@ -196,18 +197,19 @@ fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec
         let temp = s.y;
         let fuel = s.z;
 
-        let hot_fraction = smoothstep(900.0, 1400.0, temp);
-        let extinction = tanh(10.0 * fuel) * hot_fraction;
+        // Emission color from blackbody radiation at this temperature
+        let emit_color = blackbody_color(temp);
 
-        accum_color += (1.0 - accum_alpha) * extinction * ds * blackbody_color(temp);
-        accum_alpha += (1.0 - accum_alpha) * extinction * ds;
+        // Front-to-back composite: emission weighted by remaining transmittance
+        accum_color += (1.0 - accum_alpha) * emit_color;
+        accum_alpha += alpha_step;
 
         if (accum_alpha > 0.99) { break; }
 
         t = t + ds;
     }
 
-    return vec4<f32>(accum_color, accum_alpha);
+    return vec4<f32>(accum_color, 1.0);
 }
 
 fn intersect_aabb(ro: vec3<f32>, rd: vec3<f32>, bmin: vec3<f32>, bmax: vec3<f32>) -> vec2<f32> {

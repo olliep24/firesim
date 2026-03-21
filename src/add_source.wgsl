@@ -21,7 +21,7 @@ const radius2: f32 = radius * radius;
 const peak:    f32 = 1.0;
 
 // Units of fuel injected at the Gaussian peak.
-const INJECTION_RATE: f32 = 1.0;
+const INJECTION_RATE: f32 = 1.5;
 
 /* Adds smoke density (x) and temperature (y) to the source texture. */
 @compute
