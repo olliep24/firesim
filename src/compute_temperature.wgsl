@@ -20,7 +20,6 @@ var scalar_field_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
 var field_sampler: sampler;
 
-
 const COOLING: f32 = 500.0;
 const BURN_TEMPERATURE: f32 = 2000.0;
 const BURN_RATE: f32 = 1.0;
@@ -48,12 +47,11 @@ fn main (
     let fuel_temperature = fuel * BURN_TEMPERATURE;
 
     let new_temperature = clamp(max(cooled_temperature, fuel_temperature), 0.0, BURN_TEMPERATURE);
-    let burn = params.dt * BURN_RATE * fuel * (current_temperature / BURN_TEMPERATURE);
-    let new_fuel = max(0.0, fuel - burn);
+
     textureStore(
         scalar_field_write,
         vec3<i32>(gid),
-        vec4<f32>(get_smoke(gid), new_temperature, new_fuel, 0.0)
+        vec4<f32>(get_smoke(gid), new_temperature, fuel, 0.0)
     );
 }
 

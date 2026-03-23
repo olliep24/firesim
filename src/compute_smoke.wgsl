@@ -20,9 +20,6 @@ var scalar_field_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
 var field_sampler: sampler;
 
-// Fractional smoke dissipation per second.
-// With 0.1, smoke density halves roughly every 7 seconds — slow enough to see
-// the smoke plume persist and rise well above the fire source.
 const gamma_smoke: f32 = 0.5;
 
 /**
