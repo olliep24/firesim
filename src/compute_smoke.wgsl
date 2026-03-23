@@ -22,6 +22,11 @@ var field_sampler: sampler;
 
 const k_smoke = 1.0;
 const gamma_smoke: f32 = 0.5;
+// Minimum fuel level required to generate smoke.
+// 0.0 = all fuel generates smoke (current behavior)
+// 0.5 = only the dense core generates smoke
+// Tune empirically — higher values pull smoke inward.
+const SMOKE_FUEL_THRESHOLD: f32 = 0.3;
 
 /**
  * Smoke density is stored in the first (x) channel.
@@ -42,7 +47,7 @@ fn main (
     let decay = pow(1.0 - gamma_smoke, params.dt);
 
     let fuel = get_fuel(gid);
-    let smoke_from_fuel = fuel * k_smoke;
+    let smoke_from_fuel = smoothstep(SMOKE_FUEL_THRESHOLD, 1.0, fuel) * k_smoke;
 
     let new_smoke = current_smoke * decay + smoke_from_fuel;
 

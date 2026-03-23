@@ -20,7 +20,7 @@ var scalar_field_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
 var field_sampler: sampler;
 
-const COOLING: f32 = 500.0;
+const COOLING: f32 = 800.0;
 const BURN_TEMPERATURE: f32 = 2000.0;
 const BURN_RATE: f32 = 1.0;
 
