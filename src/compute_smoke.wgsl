@@ -20,6 +20,7 @@ var scalar_field_write: texture_storage_3d<rgba16float, write>;
 @group(1) @binding(2)
 var field_sampler: sampler;
 
+const k_smoke = 1.0;
 const gamma_smoke: f32 = 0.5;
 
 /**
@@ -39,7 +40,11 @@ fn main (
 
     let current_smoke = get_smoke(gid);
     let decay = pow(1.0 - gamma_smoke, params.dt);
-    let new_smoke = current_smoke * decay;
+
+    let fuel = get_fuel(gid);
+    let smoke_from_fuel = fuel * k_smoke;
+
+    let new_smoke = current_smoke * decay + smoke_from_fuel;
 
     textureStore(
         scalar_field_write,

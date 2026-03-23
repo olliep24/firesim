@@ -67,6 +67,9 @@ const EXPOSURE: f32 = 1e-13;
 // Increase for brighter/lighter smoke; decrease for darker smoke.
 const SMOKE_COLOR: vec3<f32> = vec3<f32>(0.35, 0.35, 0.35);
 
+// Extinction coefficient for smoke. Higher = denser/more opaque smoke.
+const SIGMA_SMOKE: f32 = 0.1;
+
 // Planck spectral radiance B(λ, T) = c₁ / (λ⁵ · (exp(c₂/λT) − 1))
 // Returns 0 when the exponent would overflow f32 (very low T or short λ).
 fn planck(lambda_nm: f32, T_K: f32) -> f32 {
@@ -187,22 +190,24 @@ fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec
     var t = t_enter;
     var accum_color = vec3<f32>(0.0);
     var accum_alpha = 0.0;
-    let alpha_step = 1.0 / f32(steps);
 
     for (var i: u32 = 0u; i < steps; i = i + 1u) {
         let p = ro + rd * (t + 0.5 * ds);
         let uvw = (p - bmin) / (bmax - bmin);
 
         let s = textureSampleLevel(density_scalar_field, field_sampler, uvw, 0.0);
+        let smoke = s.x;
         let temp = s.y;
-        let fuel = s.z;
 
-        // Emission color from blackbody radiation at this temperature
+        // Beer-Lambert extinction: alpha contribution from smoke density this step
+        let smoke_alpha = 1.0 - exp(-smoke * SIGMA_SMOKE * ds);
+
+        // Emission from blackbody radiation at this temperature
         let emit_color = blackbody_color(temp);
 
-        // Front-to-back composite: emission weighted by remaining transmittance
-        accum_color += (1.0 - accum_alpha) * emit_color;
-        accum_alpha += alpha_step;
+        // Front-to-back compositing: smoke scattering + fire emission
+        accum_color += (1.0 - accum_alpha) * (SMOKE_COLOR * smoke_alpha + emit_color);
+        accum_alpha += (1.0 - accum_alpha) * smoke_alpha;
 
         if (accum_alpha > 0.99) { break; }
 
