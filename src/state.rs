@@ -68,6 +68,7 @@ pub struct State {
     add_vorticity_confinement_force_compute_step: ComputeStep,
     compute_temperature_compute_step: ComputeStep,
     compute_smoke_compute_step: ComputeStep,
+    elapsed_time: f32,
     pending_input: bool,
     pub mouse_pressed: bool,
     pub window: Arc<Window>,
@@ -645,6 +646,7 @@ impl State {
             add_vorticity_confinement_force_compute_step,
             compute_temperature_compute_step,
             compute_smoke_compute_step,
+            elapsed_time: 0.0,
             pending_input: false,
             mouse_pressed: false,
             window,
@@ -675,7 +677,9 @@ impl State {
         the CPU.
          */
         // TODO: Make this a fixed timestep.
+        self.elapsed_time += dt.as_secs_f32();
         self.compute_params.update_dt(dt);
+        self.compute_params.update_elapsed_time(self.elapsed_time);
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
         self.queue.write_buffer(&self.compute_params_buffer, 0, bytemuck::cast_slice(&[self.compute_params]));
     }

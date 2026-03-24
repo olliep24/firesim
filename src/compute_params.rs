@@ -24,7 +24,8 @@ pub struct ComputeParams {
     box_max: [f32; 4],
     /// Number of pixels [width, height]
     viewport: [f32; 2],
-    _pad0: [f32; 2],
+    elapsed_time: f32,
+    _pad0: f32,
 }
 
 impl ComputeParams {
@@ -37,12 +38,17 @@ impl ComputeParams {
             box_min,
             box_max,
             viewport: [config.width as f32, config.height as f32],
-            _pad0: [0.0; 2],
+            elapsed_time: 0.0,
+            _pad0: 0.0,
         }
     }
 
     pub fn update_dt(&mut self, dt: Duration, ) {
         self.dt = dt.as_secs_f32();
+    }
+
+    pub fn update_elapsed_time(&mut self, elapsed: f32) {
+        self.elapsed_time = elapsed;
     }
 
     pub fn update_viewport(&mut self, config: &wgpu::SurfaceConfiguration) {
