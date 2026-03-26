@@ -78,9 +78,12 @@ impl State {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let size = window.inner_size();
 
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
             backends: wgpu::Backends::PRIMARY,
-            ..Default::default()
+            flags: Default::default(),
+            memory_budget_thresholds: Default::default(),
+            backend_options: Default::default(),
+            display: None,
         });
 
         let surface = instance.create_surface(window.clone())?;
@@ -288,11 +291,11 @@ impl State {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
                 bind_group_layouts: &[
-                    &camera_bind_group_layout,
-                    &compute_params_bind_group_layout,
-                    &density_texture_bind_group_layout,
+                    Some(&camera_bind_group_layout),
+                    Some(&compute_params_bind_group_layout),
+                    Some(&density_texture_bind_group_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -325,8 +328,8 @@ impl State {
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: Texture::DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::LessEqual,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -335,7 +338,7 @@ impl State {
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -372,19 +375,19 @@ impl State {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Add Source Pipeline Layout"),
                 bind_group_layouts: &[
-                    &compute_params_bind_group_layout,
-                    &add_source_bind_group_layout,
+                    Some(&compute_params_bind_group_layout),
+                    Some(&add_source_bind_group_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let remove_source_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Remove Source Pipeline Layout"),
                 bind_group_layouts: &[
-                    &add_source_bind_group_layout,
+                    Some(&add_source_bind_group_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let add_source_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -472,10 +475,10 @@ impl State {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Compute Divergence Pipeline Layout"),
                 bind_group_layouts: &[
-                    &compute_params_bind_group_layout,
-                    &compute_divergence_bind_group_layout,
+                    Some(&compute_params_bind_group_layout),
+                    Some(&compute_divergence_bind_group_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let compute_divergence_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -565,10 +568,10 @@ impl State {
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Compute Curl Pipeline Layout"),
                 bind_group_layouts: &[
-                    &compute_params_bind_group_layout,
-                    &compute_curl_bind_group_layout,
+                    Some(&compute_params_bind_group_layout),
+                    Some(&compute_curl_bind_group_layout),
                 ],
-                push_constant_ranges: &[],
+                immediate_size: 0,
             });
 
         let compute_curl_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1017,6 +1020,7 @@ impl State {
                 }),
                 occlusion_query_set: None,
                 timestamp_writes: None,
+                multiview_mask: None,
             });
 
             let density_texture_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1117,10 +1121,10 @@ fn create_advect_scalars_compute_step(device: &Device, compute_params_bind_group
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Advect Scalars Pipeline Layout"),
             bind_group_layouts: &[
-                compute_params_bind_group_layout,
-                &advect_scalars_bind_group_layout,
+                Some(compute_params_bind_group_layout),
+                Some(&advect_scalars_bind_group_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
     let advect_scalars_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1185,10 +1189,10 @@ fn create_advect_velocity_compute_step(device: &Device, compute_params_bind_grou
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Advect Velocity Pipeline Layout"),
             bind_group_layouts: &[
-                compute_params_bind_group_layout,
-                &advect_velocity_bind_group_layout,
+                Some(compute_params_bind_group_layout),
+                Some(&advect_velocity_bind_group_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
     let advect_velocity_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1257,10 +1261,10 @@ fn create_add_forces_to_velocity_compute_step(device: &Device, compute_params_bi
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Add Forces to Velocity Pipeline Layout"),
             bind_group_layouts: &[
-                compute_params_bind_group_layout,
-                &add_forces_to_velocity_bind_group_layout,
+                Some(compute_params_bind_group_layout),
+                Some(&add_forces_to_velocity_bind_group_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
     let add_forces_to_velocity_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1336,10 +1340,10 @@ fn create_compute_pressure_compute_step(device: &Device, compute_params_bind_gro
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Compute Pressure Pipeline Layout"),
             bind_group_layouts: &[
-                compute_params_bind_group_layout,
-                &compute_pressure_bind_group_layout,
+                Some(compute_params_bind_group_layout),
+                Some(&compute_pressure_bind_group_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
     let compute_pressure_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1415,10 +1419,10 @@ fn create_subtract_pressure_gradient_compute_step(device: &Device, compute_param
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Subtract Gradient Pipeline Layout"),
             bind_group_layouts: &[
-                compute_params_bind_group_layout,
-                &subtract_pressure_gradient_bind_group_layout,
+                Some(compute_params_bind_group_layout),
+                Some(&subtract_pressure_gradient_bind_group_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
     let subtract_pressure_gradient_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1494,10 +1498,10 @@ fn create_add_vorticity_confinement_force_compute_step(device: &Device, compute_
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Add Vorticity Confinement Pipeline Layout"),
             bind_group_layouts: &[
-                compute_params_bind_group_layout,
-                &add_vorticity_confinement_force_bind_group_layout,
+                Some(compute_params_bind_group_layout),
+                Some(&add_vorticity_confinement_force_bind_group_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
     let add_vorticity_confinement_force_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1562,10 +1566,10 @@ fn create_compute_temperature_compute_step(device: &Device, compute_params_bind_
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Compute Temperature Pipeline Layout"),
             bind_group_layouts: &[
-                compute_params_bind_group_layout,
-                &compute_temperature_bind_group_layout,
+                Some(compute_params_bind_group_layout),
+                Some(&compute_temperature_bind_group_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
     let compute_temperature_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1630,10 +1634,10 @@ fn create_compute_smoke_compute_step(device: &Device, compute_params_bind_group_
         device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Compute Smoke Pipeline Layout"),
             bind_group_layouts: &[
-                compute_params_bind_group_layout,
-                &compute_smoke_bind_group_layout,
+                Some(compute_params_bind_group_layout),
+                Some(&compute_smoke_bind_group_layout),
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
     let compute_smoke_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
