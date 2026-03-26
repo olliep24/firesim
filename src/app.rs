@@ -43,13 +43,10 @@ impl ApplicationHandler for App {
                 state.update(dt);
                 match state.render() {
                     Ok(_) => {}
-                    // Reconfigure the surface if it's lost or outdated
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        let size = state.window.inner_size();
-                        state.resize(size.width, size.height);
-                    }
                     Err(e) => {
-                        log::error!("Unable to render {}", e);
+                        // Log the error and exit gracefully
+                        log::error!("{e}");
+                        event_loop.exit();
                     }
                 }
             }
