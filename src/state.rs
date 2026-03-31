@@ -6,6 +6,11 @@ use winit::event_loop::ActiveEventLoop;
 use winit::keyboard::KeyCode;
 use winit::window::Window;
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::EventLoopExtWebSys;
+
 use crate::camera::{Camera, CameraController, CameraUniform, Projection};
 use crate::texture::Texture;
 use crate::compute_params::ComputeParams;

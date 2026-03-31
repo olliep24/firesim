@@ -13,3 +13,8 @@ bytemuck = { version = "1.24", features = [ "derive" ] }
 cgmath = "0.18.0"
 instant = "0.1.13"
 half = "2.7.1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wgpu = { version = "29.0", features = ["webgl"]}
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4.30"
