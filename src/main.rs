@@ -7,25 +7,9 @@ mod config;
 mod compute_step;
 mod ping_pong;
 
-use anyhow::Result;
 use winit::event_loop::{ControlFlow, EventLoop};
-use crate::app::App;
+use crate::app::{run, App};
 
-fn main() -> Result<()> {
-    let event_loop = EventLoop::new()?;
-
-    // TODO: Not exactly sure which is best yet. Prob best because we want to always update the sim.
-    // ControlFlow::Poll continuously runs the event loop, even if the OS hasn't
-    // dispatched any events. This is ideal for games and similar applications.
-    event_loop.set_control_flow(ControlFlow::Poll);
-
-    // ControlFlow::Wait pauses the event loop if no events are available to process.
-    // This is ideal for non-game applications that only update in response to user
-    // input, and uses significantly less power/CPU time than ControlFlow::Poll.
-    // event_loop.set_control_flow(ControlFlow::Wait);
-
-    let mut app = App::default();
-    event_loop.run_app(&mut app)?;
-
-    Ok(())
+fn main() {
+    run().unwrap();
 }
