@@ -7,6 +7,11 @@ use winit::keyboard::PhysicalKey;
 use winit::window::Window;
 use crate::state::State;
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+#[cfg(target_arch = "wasm32")]
+use winit::event_loop::EventLoop;
+
 #[derive(Default)]
 pub struct App {
     #[cfg(target_arch = "wasm32")]
