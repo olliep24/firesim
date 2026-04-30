@@ -136,23 +136,6 @@ fn blackbody_color(temperature: f32) -> vec3<f32> {
     return tone_map(xyz_to_linear_srgb(xyz));
 }
 
-//fn blackbody_color(temperature: f32) -> vec3<f32> {
-//    let t = temperature * (3000.0 / 1700.0);
-//    let cx = (0.860117757 + 1.54118254e-4*t + 1.28641212e-7*t*t)
-//           / (1.0 + 8.42420235e-4*t + 7.08145163e-7*t*t);
-//    let cy = (0.317398726 + 4.22806245e-5*t + 4.20481691e-8*t*t)
-//           / (1.0 - 2.89741816e-5*t + 1.61456053e-7*t*t);
-//    let d = 2.0*cx - 8.0*cy + 4.0;
-//    let XYZ = vec3<f32>(3.0*cx/d, 2.0*cy/d, 1.0 - (3.0*cx + 2.0*cy)/d);
-//    let RGB = mat3x3<f32>(
-//        vec3<f32>(3.240479, -0.969256,  0.055648),
-//        vec3<f32>(-1.537150, 1.875992, -0.204043),
-//        vec3<f32>(-0.498535, 0.041556,  1.057311)
-//    ) * vec3<f32>(XYZ.x/XYZ.y, 1.0, XYZ.z/XYZ.y);
-//    let brightness = pow(t * 0.0004, 4.0);
-//    return max(RGB, vec3<f32>(0.0)) * brightness;
-//}
-
 @fragment
 fn fs_main(@builtin(position) frag_clip_position: vec4<f32>) -> @location(0) vec4<f32> {
     // Frag (pixel) coordinates normalized to 0..1
