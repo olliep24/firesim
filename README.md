@@ -2,6 +2,7 @@
 
 A real-time 3D fire and smoke simulator running entirely on the GPU, written in Rust with [wgpu](https://github.com/gfx-rs/wgpu). Compiles to native desktop and WebAssembly.
 
+![firesim demo](assets/firesim.gif)
 ## Overview
 
 The simulation uses an Eulerian fluid solver on a 128³ voxel grid. Each frame runs a sequence of WGSL compute shaders that evolve a scalar density/temperature field and a velocity field, then renders the result via volume ray marching.
